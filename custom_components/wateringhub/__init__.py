@@ -7,6 +7,7 @@ import logging
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.discovery import async_load_platform
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
 
@@ -19,8 +20,8 @@ VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Required("entity_id"): cv.entity_id,
-        vol.Optional("flow_sensor"): cv.entity_id,
+        vol.Required("entity_id"): cv.string,
+        vol.Optional("flow_sensor"): cv.string,
     }
 )
 
@@ -90,9 +91,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     for platform in PLATFORMS:
         hass.async_create_task(
-            hass.helpers.discovery.async_load_platform(
-                platform, DOMAIN, {}, config
-            )
+            async_load_platform(hass, platform, DOMAIN, {}, config)
         )
 
     async def handle_stop_all(call: ServiceCall) -> None:

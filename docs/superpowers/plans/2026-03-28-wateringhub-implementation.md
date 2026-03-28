@@ -923,47 +923,47 @@ gh release create v0.0.1-alpha --title "v0.0.1-alpha — Initial structure" --no
 ```yaml
 wateringhub:
   valves:
-    - id: cedre
-      name: Oscillant Cèdre
-      entity_id: switch.0xe406bffffed0fdc0
-      flow_sensor: sensor.0xe406bffffed0fdc0_flow
-    - id: terrasse
-      name: Oscillant Terrasse
-      entity_id: switch.0xe406bffffed10058
-      flow_sensor: sensor.0xe406bffffed10058_flow
+    - id: valve_1
+      name: My First Valve
+      entity_id: switch.your_valve_1
+      flow_sensor: sensor.your_valve_1_flow
+    - id: valve_2
+      name: My Second Valve
+      entity_id: switch.your_valve_2
+      flow_sensor: sensor.your_valve_2_flow
 
   zones:
-    - id: jardin
-      name: Jardin complet
+    - id: zone_1
+      name: Front Garden
       valves:
-        - valve_id: cedre
+        - valve_id: valve_1
           duration: 15
-        - valve_id: terrasse
+        - valve_id: valve_2
           duration: 20
 
   programs:
-    - id: prog_quotidien
-      name: Arrosage quotidien
+    - id: prog_daily
+      name: Daily Watering
       enabled: true
       schedule:
         type: daily
         time: "22:00"
       zones:
-        - zone_id: jardin
+        - zone_id: zone_1
 
-    - id: prog_j2
-      name: Arrosage J+2
+    - id: prog_every2
+      name: Every 2 Days
       enabled: false
       schedule:
         type: every_n_days
         n: 2
-        start_date: "2026-03-28"
+        start_date: "2026-01-01"
         time: "22:00"
       zones:
-        - zone_id: jardin
+        - zone_id: zone_1
 ```
 
 5. Restart HA → check entities appear in Developer Tools → States
-6. Verify: 2 switches (`switch.wateringhub_prog_quotidien`, `switch.wateringhub_prog_j2`) + 3 sensors
+6. Verify: 2 switches (`switch.wateringhub_prog_daily`, `switch.wateringhub_prog_every2`) + 3 sensors
 7. Toggle a switch → verify mutex works (other turns off)
 8. Call `wateringhub.stop_all` from Developer Tools → Services
