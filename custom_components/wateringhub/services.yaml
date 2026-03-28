@@ -1,0 +1,3 @@
+stop_all:
+  name: Stop All
+  description: Close all valves immediately and cancel any running program.
