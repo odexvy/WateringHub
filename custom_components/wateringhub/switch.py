@@ -52,6 +52,7 @@ class ProgramSwitch(SwitchEntity):
         self._program_id = program_id
         self._attr_name = program["name"]
         self._attr_unique_id = f"{DOMAIN}_{program_id}"
+        self.entity_id = f"switch.{DOMAIN}_{program_id}"
 
     @property
     def is_on(self) -> bool:
