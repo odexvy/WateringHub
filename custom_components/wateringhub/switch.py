@@ -23,14 +23,20 @@ async def async_setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up WateringHub program switches."""
-    coordinator: WateringHubCoordinator = hass.data[DOMAIN]
+    _LOGGER.debug("Setting up WateringHub switch platform")
 
-    entities = [
-        ProgramSwitch(coordinator, program_id, program)
-        for program_id, program in coordinator.programs.items()
-    ]
+    try:
+        coordinator: WateringHubCoordinator = hass.data[DOMAIN]
 
-    async_add_entities(entities)
+        entities = [
+            ProgramSwitch(coordinator, program_id, program)
+            for program_id, program in coordinator.programs.items()
+        ]
+
+        _LOGGER.debug("Adding %d switch entities", len(entities))
+        async_add_entities(entities)
+    except Exception:
+        _LOGGER.exception("Failed to set up WateringHub switch platform")
 
 
 class ProgramSwitch(SwitchEntity):

@@ -23,6 +23,8 @@ async def async_setup_platform(
     discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up WateringHub sensors."""
+    _LOGGER.debug("Setting up WateringHub sensor platform")
+
     coordinator: WateringHubCoordinator = hass.data[DOMAIN]
 
     async_add_entities([
