@@ -27,9 +27,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install mypy voluptuous homeassistant --no-deps
-      - run: pip install homeassistant
-        continue-on-error: true
+      - run: pip install "mypy>=1.13.0,<1.19" voluptuous homeassistant
       - run: mypy custom_components/
 
   test:
@@ -40,6 +38,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements-dev.txt
-      - run: pip install homeassistant --no-deps
+      - run: pip install -r requirements-dev.txt homeassistant
       - run: pytest -v
