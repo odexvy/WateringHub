@@ -50,6 +50,7 @@ class WateringHubCoordinator:
         self._current_valve_duration: int = 0
         self._valves_done: int = 0
         self._valves_total: int = 0
+        self._error_message: str | None = None
 
     # --- State accessors ---
 
@@ -76,6 +77,21 @@ class WateringHubCoordinator:
     @property
     def execution_state(self) -> dict:
         """Return current execution details for the status sensor attributes."""
+        if self._status == "error":
+            return {
+                "current_program": self._current_program,
+                "current_zone": None,
+                "current_zone_name": None,
+                "current_valve": None,
+                "current_valve_name": None,
+                "current_valve_start": None,
+                "current_valve_duration": None,
+                "valves_done": None,
+                "valves_total": None,
+                "progress_percent": None,
+                "error_message": self._error_message,
+            }
+
         if self._status != "running":
             return {
                 "current_program": None,
@@ -88,6 +104,7 @@ class WateringHubCoordinator:
                 "valves_done": None,
                 "valves_total": None,
                 "progress_percent": None,
+                "error_message": None,
             }
 
         total_seconds = self._valves_total * 60 if self._valves_total else 1
@@ -107,6 +124,7 @@ class WateringHubCoordinator:
             "valves_done": self._valves_done,
             "valves_total": self._valves_total,
             "progress_percent": progress,
+            "error_message": None,
         }
 
     # --- Listeners ---
@@ -325,6 +343,7 @@ class WateringHubCoordinator:
             self._cancel_event.clear()
             self._running_program = program_id
             self._current_program = program_id
+            self._error_message = None
             self._status = "running"
             self._valves_done = 0
             self._valves_total = sum(
@@ -375,6 +394,7 @@ class WateringHubCoordinator:
 
             except Exception as err:
                 _LOGGER.exception("Error running program '%s'", program_id)
+                self._error_message = str(err)
                 self._status = "error"
                 await self.async_stop_all()
 
@@ -387,9 +407,25 @@ class WateringHubCoordinator:
                     },
                 )
 
+                # Persistent notification in HA UI
+                await self.hass.services.async_call(
+                    "persistent_notification",
+                    "create",
+                    {
+                        "title": "WateringHub — Erreur",
+                        "message": (
+                            f"Le programme **{program.get('name', program_id)}** "
+                            f"a rencontré une erreur : {err}\n\n"
+                            "Toutes les vannes ont été fermées automatiquement."
+                        ),
+                        "notification_id": "wateringhub_error",
+                    },
+                )
+
             finally:
                 self._running_program = None
-                self._current_program = None
+                if self._status != "error":
+                    self._current_program = None
                 self._current_zone = None
                 self._current_zone_name = None
                 self._current_valve = None
