@@ -16,27 +16,21 @@ from .coordinator import WateringHubCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_platform(
+async def async_setup_platform(  # noqa: S7503 — async required by HA platform API
     hass: HomeAssistant,
-    config: ConfigType,
+    _config: ConfigType,
     async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
+    _discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up WateringHub program switches."""
-    _LOGGER.debug("Setting up WateringHub switch platform")
+    coordinator: WateringHubCoordinator = hass.data[DOMAIN]
 
-    try:
-        coordinator: WateringHubCoordinator = hass.data[DOMAIN]
+    entities = [
+        ProgramSwitch(coordinator, program_id, program)
+        for program_id, program in coordinator.programs.items()
+    ]
 
-        entities = [
-            ProgramSwitch(coordinator, program_id, program)
-            for program_id, program in coordinator.programs.items()
-        ]
-
-        _LOGGER.debug("Adding %d switch entities", len(entities))
-        async_add_entities(entities)
-    except Exception:
-        _LOGGER.exception("Failed to set up WateringHub switch platform")
+    async_add_entities(entities)
 
 
 class ProgramSwitch(SwitchEntity):
@@ -58,6 +52,10 @@ class ProgramSwitch(SwitchEntity):
     def is_on(self) -> bool:
         return self._coordinator.programs[self._program_id]["enabled"]
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self._coordinator.get_program_details(self._program_id)
+
     async def async_turn_on(self, **kwargs) -> None:
         await self._coordinator.async_enable_program(self._program_id)
 
@@ -65,7 +63,7 @@ class ProgramSwitch(SwitchEntity):
         await self._coordinator.async_disable_program(self._program_id)
 
     async def async_added_to_hass(self) -> None:
-        self._coordinator.add_listener(self.async_write_ha_state)
+        self._coordinator.add_listener(self.async_schedule_update_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:
-        self._coordinator.remove_listener(self.async_write_ha_state)
+        self._coordinator.remove_listener(self.async_schedule_update_ha_state)

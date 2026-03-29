@@ -343,7 +343,7 @@ class WateringHubCoordinator:
         """Return ID of currently running program, or None."""
         return self._running_program
 
-    # --- Listener pattern (like React Context subscribers) ---
+    # --- Listeners ---
 
     def add_listener(self, callback) -> None:
         """Register a callback to be called on state changes."""

@@ -5,14 +5,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, EVENT_TYPE, VALVE_PAUSE_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
+
+MAX_SCHEDULE_LOOKAHEAD_DAYS = 400
+
+DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 
 class WateringHubCoordinator:
@@ -26,12 +31,13 @@ class WateringHubCoordinator:
 
         self._running_program: str | None = None
         self._cancel_event: asyncio.Event = asyncio.Event()
+        self._run_lock: asyncio.Lock = asyncio.Lock()
         self._unsub_time: list = []
         self._listeners: list = []
 
         self._status: str = "idle"
-        self._last_run: datetime | None = None
-        self._next_run: datetime | None = None
+        self._last_run = None
+        self._next_run = None
 
     # --- State accessors ---
 
@@ -44,18 +50,18 @@ class WateringHubCoordinator:
         return self._status
 
     @property
-    def last_run(self) -> datetime | None:
+    def last_run(self):
         return self._last_run
 
     @property
-    def next_run(self) -> datetime | None:
+    def next_run(self):
         return self._next_run
 
     @property
     def running_program(self) -> str | None:
         return self._running_program
 
-    # --- Listeners (like React Context subscribers) ---
+    # --- Listeners ---
 
     def add_listener(self, callback) -> None:
         self._listeners.append(callback)
@@ -65,7 +71,43 @@ class WateringHubCoordinator:
 
     def _notify_listeners(self) -> None:
         for callback in self._listeners:
-            callback()
+            self.hass.loop.call_soon_threadsafe(callback)
+
+    # --- Program details (for switch attributes) ---
+
+    def get_program_details(self, program_id: str) -> dict:
+        """Resolve a program's zones and valves into full details with names."""
+        program = self._programs.get(program_id, {})
+        zones = []
+        total_duration = 0
+
+        for zone_ref in program.get("zones", []):
+            zone = self._zones.get(zone_ref["zone_id"])
+            if not zone:
+                continue
+            valves = []
+            for valve_ref in zone["valves"]:
+                valve = self._valves.get(valve_ref["valve_id"])
+                if not valve:
+                    continue
+                valves.append({
+                    "valve_id": valve_ref["valve_id"],
+                    "valve_name": valve["name"],
+                    "duration": valve_ref["duration"],
+                })
+                total_duration += valve_ref["duration"]
+            zones.append({
+                "zone_id": zone_ref["zone_id"],
+                "zone_name": zone["name"],
+                "valves": valves,
+            })
+
+        return {
+            "program_id": program_id,
+            "schedule": program.get("schedule", {}),
+            "zones": zones,
+            "total_duration": total_duration,
+        }
 
     # --- Mutex ---
 
@@ -96,7 +138,10 @@ class WateringHubCoordinator:
         """Stop any running program and close all valves."""
         self._cancel_event.set()
         self._running_program = None
-        self._status = "idle"
+
+        # Only reset to idle if not in error state (C1 fix)
+        if self._status != "error":
+            self._status = "idle"
 
         for valve in self._valves.values():
             try:
@@ -113,7 +158,7 @@ class WateringHubCoordinator:
 
     # --- Scheduling ---
 
-    async def async_start(self) -> None:
+    def start(self) -> None:
         """Start the scheduler. Called once from async_setup."""
         self._cancel_event.clear()
         self._recalculate_next_run()
@@ -132,7 +177,7 @@ class WateringHubCoordinator:
         self._unsub_time.clear()
         await self.async_stop_all()
 
-    async def _async_time_tick(self, now: datetime) -> None:
+    async def _async_time_tick(self, now) -> None:
         """Called every minute. Check if a program should run."""
         if self._running_program:
             return
@@ -152,7 +197,7 @@ class WateringHubCoordinator:
             return
 
         _LOGGER.info("Triggering program '%s'", active["id"])
-        self.hass.async_create_task(self.async_run_program(active["id"]))
+        await self.async_run_program(active["id"])
 
     def _get_active_program(self) -> dict | None:
         """Return the single enabled program, or None."""
@@ -161,7 +206,7 @@ class WateringHubCoordinator:
                 return program
         return None
 
-    def _should_run_today(self, program: dict, now: datetime) -> bool:
+    def _should_run_today(self, program: dict, now) -> bool:
         """Check if a program should run today based on schedule type."""
         schedule = program["schedule"]
         schedule_type = schedule["type"]
@@ -170,8 +215,9 @@ class WateringHubCoordinator:
             return True
 
         if schedule_type == "weekdays":
-            day_name = now.strftime("%a").lower()
-            return day_name in schedule.get("days", [])
+            current_weekday = now.weekday()
+            allowed_days = schedule.get("days", [])
+            return current_weekday in [DAY_MAP[d] for d in allowed_days if d in DAY_MAP]
 
         if schedule_type == "every_n_days":
             n = schedule.get("n", 1)
@@ -179,7 +225,8 @@ class WateringHubCoordinator:
             if not start_str:
                 return True
             start_date = date.fromisoformat(start_str)
-            delta = (now.date() - start_date).days
+            today = now.date() if hasattr(now, "date") else now
+            delta = (today - start_date).days
             return delta >= 0 and delta % n == 0
 
         return False
@@ -193,14 +240,13 @@ class WateringHubCoordinator:
 
         schedule = active["schedule"]
         hour, minute = map(int, schedule["time"].split(":"))
-        now = datetime.now()
+        now = dt_util.now()
         candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         if candidate <= now:
             candidate += timedelta(days=1)
 
-        # Advance until a valid day for every_n_days and weekdays
-        for _ in range(400):
+        for _ in range(MAX_SCHEDULE_LOOKAHEAD_DAYS):
             if self._should_run_today(active, candidate):
                 self._next_run = candidate
                 return
@@ -212,63 +258,68 @@ class WateringHubCoordinator:
 
     async def async_run_program(self, program_id: str) -> None:
         """Execute a program: run each zone's valves sequentially."""
-        program = self._programs.get(program_id)
-        if not program:
-            _LOGGER.error("Program '%s' not found", program_id)
+        if self._run_lock.locked():
+            _LOGGER.warning("Program execution already in progress, skipping")
             return
 
-        self._cancel_event.clear()
-        self._running_program = program_id
-        self._status = "running"
-        self._notify_listeners()
+        async with self._run_lock:
+            program = self._programs.get(program_id)
+            if not program:
+                _LOGGER.error("Program '%s' not found", program_id)
+                return
 
-        self.hass.bus.async_fire(EVENT_TYPE, {
-            "action": "program_started",
-            "program": program_id,
-        })
+            self._cancel_event.clear()
+            self._running_program = program_id
+            self._status = "running"
+            self._notify_listeners()
 
-        try:
-            for zone_ref in program["zones"]:
-                zone = self._zones.get(zone_ref["zone_id"])
-                if not zone:
-                    _LOGGER.warning("Zone '%s' not found, skipping", zone_ref["zone_id"])
-                    continue
+            self.hass.bus.async_fire(EVENT_TYPE, {
+                "action": "program_started",
+                "program": program_id,
+            })
 
-                for valve_ref in zone["valves"]:
-                    if self._cancel_event.is_set():
-                        _LOGGER.info("Execution cancelled")
-                        return
-
-                    valve = self._valves.get(valve_ref["valve_id"])
-                    if not valve:
-                        _LOGGER.warning("Valve '%s' not found, skipping", valve_ref["valve_id"])
+            try:
+                for zone_ref in program["zones"]:
+                    zone = self._zones.get(zone_ref["zone_id"])
+                    if not zone:
+                        _LOGGER.warning("Zone '%s' not found, skipping", zone_ref["zone_id"])
                         continue
 
-                    await self._async_run_valve(valve, valve_ref["duration"])
+                    for valve_ref in zone["valves"]:
+                        if self._cancel_event.is_set():
+                            _LOGGER.info("Execution cancelled")
+                            return
 
-            self._status = "idle"
-            self._last_run = datetime.now()
-            self._recalculate_next_run()
+                        valve = self._valves.get(valve_ref["valve_id"])
+                        if not valve:
+                            _LOGGER.warning("Valve '%s' not found, skipping", valve_ref["valve_id"])
+                            continue
 
-            self.hass.bus.async_fire(EVENT_TYPE, {
-                "action": "program_finished",
-                "program": program_id,
-            })
+                        await self._async_run_valve(valve, valve_ref["duration"])
 
-        except Exception as err:
-            _LOGGER.exception("Error running program '%s'", program_id)
-            self._status = "error"
-            await self.async_stop_all()
+                self._status = "idle"
+                self._last_run = dt_util.now()
+                self._recalculate_next_run()
 
-            self.hass.bus.async_fire(EVENT_TYPE, {
-                "action": "program_error",
-                "program": program_id,
-                "error": str(err),
-            })
+                self.hass.bus.async_fire(EVENT_TYPE, {
+                    "action": "program_finished",
+                    "program": program_id,
+                })
 
-        finally:
-            self._running_program = None
-            self._notify_listeners()
+            except Exception as err:
+                _LOGGER.exception("Error running program '%s'", program_id)
+                self._status = "error"
+                await self.async_stop_all()
+
+                self.hass.bus.async_fire(EVENT_TYPE, {
+                    "action": "program_error",
+                    "program": program_id,
+                    "error": str(err),
+                })
+
+            finally:
+                self._running_program = None
+                self._notify_listeners()
 
     async def _async_run_valve(self, valve: dict, duration_minutes: int) -> None:
         """Open a valve, wait for duration, close it."""

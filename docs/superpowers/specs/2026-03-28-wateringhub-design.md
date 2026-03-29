@@ -97,7 +97,7 @@ Root files: `hacs.json`, `LICENSE` (MIT).
   2. For each zone in order → for each valve in order:
      - `switch.turn_on` → wait `duration` → `switch.turn_off` → 5s pause
   3. Fire `program_finished` event
-- Cancellation via `asyncio.Event` (like JS `AbortController`)
+- Cancellation via `asyncio.Event`
 - On error: `stop_all()` + fire `program_error` event
 
 ## Entities

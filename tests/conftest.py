@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 WateringHub contributors
+"""Shared test fixtures for WateringHub."""
+from __future__ import annotations
+
+import pytest
+
+
+@pytest.fixture
+def sample_config():
+    """Return a minimal valid WateringHub YAML config."""
+    return {
+        "valves": [
+            {
+                "id": "valve_1",
+                "name": "Test Valve 1",
+                "entity_id": "switch.test_valve_1",
+            },
+            {
+                "id": "valve_2",
+                "name": "Test Valve 2",
+                "entity_id": "switch.test_valve_2",
+            },
+        ],
+        "zones": [
+            {
+                "id": "zone_1",
+                "name": "Test Zone",
+                "valves": [
+                    {"valve_id": "valve_1", "duration": 10},
+                    {"valve_id": "valve_2", "duration": 15},
+                ],
+            },
+        ],
+        "programs": [
+            {
+                "id": "prog_a",
+                "name": "Program A",
+                "enabled": True,
+                "schedule": {"type": "daily", "time": "22:00"},
+                "zones": [{"zone_id": "zone_1"}],
+            },
+            {
+                "id": "prog_b",
+                "name": "Program B",
+                "enabled": False,
+                "schedule": {
+                    "type": "every_n_days",
+                    "n": 2,
+                    "start_date": "2026-01-01",
+                    "time": "08:00",
+                },
+                "zones": [{"zone_id": "zone_1"}],
+            },
+        ],
+    }

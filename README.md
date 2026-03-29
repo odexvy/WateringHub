@@ -2,6 +2,8 @@
 
 Custom Home Assistant component for automated watering management, installable via [HACS](https://hacs.xyz/).
 
+> **Requires:** [WateringHub Card](https://github.com/odexvy/WateringHubCard) — companion Lovelace card for the dashboard UI (install via HACS as a Frontend plugin)
+
 ## Features
 
 - Configure physical valves (HA switch entities)
@@ -18,7 +20,8 @@ Custom Home Assistant component for automated watering management, installable v
 1. In HACS, go to **Integrations** > **+** > **Custom repositories**
 2. Add this repository URL, category: **Integration**
 3. Install **WateringHub**
-4. Restart Home Assistant
+4. Also install [WateringHub Card](https://github.com/odexvy/WateringHubCard) (category: **Plugin**)
+5. Restart Home Assistant
 
 ### Manual
 
@@ -31,21 +34,21 @@ Add to your `configuration.yaml`:
 ```yaml
 wateringhub:
   valves:
-    - id: cedre
-      name: Oscillant Cedre
-      entity_id: switch.0xe406bffffed0fdc0
-      flow_sensor: sensor.0xe406bffffed0fdc0_flow  # optional
-    - id: terrasse
-      name: Oscillant Terrasse
-      entity_id: switch.0xe406bffffed10058
+    - id: valve_1
+      name: My First Valve
+      entity_id: switch.your_valve_1
+      flow_sensor: sensor.your_valve_1_flow  # optional
+    - id: valve_2
+      name: My Second Valve
+      entity_id: switch.your_valve_2
 
   zones:
     - id: jardin
       name: Jardin complet
       valves:
-        - valve_id: cedre
+        - valve_id: valve_1
           duration: 15   # minutes
-        - valve_id: terrasse
+        - valve_id: valve_2
           duration: 20
 
   programs:
