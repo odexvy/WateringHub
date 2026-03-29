@@ -6,12 +6,12 @@ from __future__ import annotations
 import logging
 import re
 
+import voluptuous as vol
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.helpers.typing import ConfigType
-from homeassistant.helpers.discovery import async_load_platform
-import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.discovery import async_load_platform
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import WateringHubCoordinator

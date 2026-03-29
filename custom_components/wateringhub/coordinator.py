@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, EVENT_TYPE, VALVE_PAUSE_SECONDS
+from .const import EVENT_TYPE, VALVE_PAUSE_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -215,9 +215,9 @@ class WateringHubCoordinator:
             return True
 
         if schedule_type == "weekdays":
-            current_weekday = now.weekday()
+            current_weekday: int = now.weekday()
             allowed_days = schedule.get("days", [])
-            return current_weekday in [DAY_MAP[d] for d in allowed_days if d in DAY_MAP]
+            return bool(current_weekday in [DAY_MAP[d] for d in allowed_days if d in DAY_MAP])
 
         if schedule_type == "every_n_days":
             n = schedule.get("n", 1)
@@ -226,8 +226,8 @@ class WateringHubCoordinator:
                 return True
             start_date = date.fromisoformat(start_str)
             today = now.date() if hasattr(now, "date") else now
-            delta = (today - start_date).days
-            return delta >= 0 and delta % n == 0
+            delta: int = (today - start_date).days
+            return bool(delta >= 0 and delta % n == 0)
 
         return False
 
