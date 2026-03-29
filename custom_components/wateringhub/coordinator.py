@@ -435,6 +435,10 @@ class WateringHubCoordinator:
 
     async def _async_time_tick(self, now) -> None:
         """Called every minute. Check if a program should run."""
+        # Keep next_run up to date
+        self._recalculate_next_run()
+        self._notify_listeners()
+
         if self._running_program:
             return
 

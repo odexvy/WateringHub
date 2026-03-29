@@ -5,5 +5,5 @@
   "dependencies": [],
   "documentation": "https://github.com/odexvy/WateringHub",
   "iot_class": "local_push",
-  "version": "0.0.10"
+  "version": "0.0.11"
 }
