@@ -47,6 +47,10 @@ class StatusSensor(SensorEntity):
     def native_value(self) -> str:
         return self._coordinator.status
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self._coordinator.execution_state
+
     async def async_added_to_hass(self) -> None:
         self._coordinator.add_listener(self.async_schedule_update_ha_state)
 

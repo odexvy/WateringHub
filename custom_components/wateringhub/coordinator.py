@@ -40,6 +40,17 @@ class WateringHubCoordinator:
         self._last_run = None
         self._next_run = None
 
+        # Execution progress tracking
+        self._current_program: str | None = None
+        self._current_zone: str | None = None
+        self._current_zone_name: str | None = None
+        self._current_valve: str | None = None
+        self._current_valve_name: str | None = None
+        self._current_valve_start = None
+        self._current_valve_duration: int = 0
+        self._valves_done: int = 0
+        self._valves_total: int = 0
+
     # --- State accessors ---
 
     @property
@@ -61,6 +72,42 @@ class WateringHubCoordinator:
     @property
     def running_program(self) -> str | None:
         return self._running_program
+
+    @property
+    def execution_state(self) -> dict:
+        """Return current execution details for the status sensor attributes."""
+        if self._status != "running":
+            return {
+                "current_program": None,
+                "current_zone": None,
+                "current_zone_name": None,
+                "current_valve": None,
+                "current_valve_name": None,
+                "current_valve_start": None,
+                "current_valve_duration": None,
+                "valves_done": None,
+                "valves_total": None,
+                "progress_percent": None,
+            }
+
+        total_seconds = self._valves_total * 60 if self._valves_total else 1
+        done_seconds = self._valves_done * 60
+        progress = int((done_seconds / total_seconds) * 100) if total_seconds else 0
+
+        return {
+            "current_program": self._current_program,
+            "current_zone": self._current_zone,
+            "current_zone_name": self._current_zone_name,
+            "current_valve": self._current_valve,
+            "current_valve_name": self._current_valve_name,
+            "current_valve_start": (
+                self._current_valve_start.isoformat() if self._current_valve_start else None
+            ),
+            "current_valve_duration": self._current_valve_duration,
+            "valves_done": self._valves_done,
+            "valves_total": self._valves_total,
+            "progress_percent": progress,
+        }
 
     # --- Listeners ---
 
@@ -277,7 +324,14 @@ class WateringHubCoordinator:
 
             self._cancel_event.clear()
             self._running_program = program_id
+            self._current_program = program_id
             self._status = "running"
+            self._valves_done = 0
+            self._valves_total = sum(
+                len(zone.get("valves", []))
+                for zone_ref in program["zones"]
+                if (zone := self._zones.get(zone_ref["zone_id"]))
+            )
             self._notify_listeners()
 
             self.hass.bus.async_fire(
@@ -291,6 +345,9 @@ class WateringHubCoordinator:
                     if not zone:
                         _LOGGER.warning("Zone '%s' not found, skipping", zone_ref["zone_id"])
                         continue
+
+                    self._current_zone = zone_ref["zone_id"]
+                    self._current_zone_name = zone["name"]
 
                     for valve_ref in zone["valves"]:
                         if self._cancel_event.is_set():
@@ -306,6 +363,8 @@ class WateringHubCoordinator:
                             continue
 
                         await self._async_run_valve(valve, valve_ref["duration"])
+                        self._valves_done += 1
+                        self._notify_listeners()
 
                 self._status = "idle"
                 self._last_run = dt_util.now()
@@ -332,6 +391,15 @@ class WateringHubCoordinator:
 
             finally:
                 self._running_program = None
+                self._current_program = None
+                self._current_zone = None
+                self._current_zone_name = None
+                self._current_valve = None
+                self._current_valve_name = None
+                self._current_valve_start = None
+                self._current_valve_duration = 0
+                self._valves_done = 0
+                self._valves_total = 0
                 self._notify_listeners()
 
     async def _async_run_valve(self, valve: dict, duration_minutes: int) -> None:
@@ -339,6 +407,12 @@ class WateringHubCoordinator:
         entity_id = valve["entity_id"]
         valve_id = valve["id"]
         duration_seconds = duration_minutes * 60
+
+        self._current_valve = valve_id
+        self._current_valve_name = valve["name"]
+        self._current_valve_duration = duration_seconds
+        self._current_valve_start = dt_util.now()
+        self._notify_listeners()
 
         _LOGGER.info("Opening valve '%s' for %d min", valve_id, duration_minutes)
 
