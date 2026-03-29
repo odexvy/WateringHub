@@ -3,7 +3,7 @@
   "name": "WateringHub",
   "codeowners": [],
   "dependencies": [],
-  "documentation": "https://github.com/your-user/WateringHub",
+  "documentation": "https://github.com/odexvy/WateringHub",
   "iot_class": "local_push",
-  "version": "0.0.1"
+  "version": "0.0.5"
 }
