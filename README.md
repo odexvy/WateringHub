@@ -6,12 +6,14 @@ Custom Home Assistant component for automated watering management, installable v
 
 ## Features
 
-- Configure physical valves (HA switch entities)
-- Group valves into zones with per-valve durations
-- Create watering programs with flexible schedules (daily, every N days, specific weekdays)
+- Configure physical valves (HA switch entities) in YAML
+- Create zones and programs dynamically via services (no restart needed)
+- Flexible schedules: daily, every N days, specific weekdays
+- Per-program valve durations
 - Strict mutex: only one program active at a time
-- Sequential valve execution with automatic open/close
-- `stop_all` service to immediately close all valves
+- Sequential valve execution with real-time progress tracking
+- State persisted across restarts (`.storage/wateringhub`)
+- Error handling with persistent HA notifications
 
 ## Installation
 
@@ -29,7 +31,7 @@ Copy `custom_components/wateringhub/` into your HA `custom_components/` director
 
 ## Configuration
 
-Add to your `configuration.yaml`:
+Only valves are defined in `configuration.yaml` (your physical devices). Zones and programs are managed dynamically via the card or HA services.
 
 ```yaml
 wateringhub:
@@ -41,53 +43,7 @@ wateringhub:
     - id: valve_2
       name: My Second Valve
       entity_id: switch.your_valve_2
-
-  zones:
-    - id: jardin
-      name: Jardin complet
-      valves:
-        - valve_1
-        - valve_2
-
-  programs:
-    - id: prog_quotidien
-      name: Arrosage quotidien
-      enabled: true
-      schedule:
-        type: daily          # daily | every_n_days | weekdays
-        time: "22:00"
-      zones:
-        - zone_id: jardin
-          valves:
-            - valve_id: valve_1
-              duration: 15   # minutes
-            - valve_id: valve_2
-              duration: 20
-
-    - id: prog_j2
-      name: Arrosage J+2
-      enabled: false
-      schedule:
-        type: every_n_days
-        n: 2
-        start_date: "2026-03-28"
-        time: "22:00"
-      zones:
-        - zone_id: jardin
-          valves:
-            - valve_id: valve_1
-              duration: 10
-            - valve_id: valve_2
-              duration: 10
 ```
-
-### Schedule types
-
-| Type | Fields | Description |
-|------|--------|-------------|
-| `daily` | `time` | Every day at the specified time |
-| `every_n_days` | `time`, `n`, `start_date` | Every N days from the start date |
-| `weekdays` | `time`, `days` | On specific days (`["mon", "wed", "fri"]`) |
 
 ## Entities
 
@@ -98,11 +54,50 @@ wateringhub:
 | `sensor.wateringhub_next_run` | Sensor | Next scheduled run datetime |
 | `sensor.wateringhub_last_run` | Sensor | Last completed run datetime |
 
+Switch entities are created/removed dynamically when programs are added/deleted.
+
 ## Services
 
 | Service | Description |
 |---------|-------------|
 | `wateringhub.stop_all` | Close all valves immediately, cancel running program |
+| `wateringhub.create_zone` | Create a zone (id, name, valve list) |
+| `wateringhub.update_zone` | Update a zone |
+| `wateringhub.delete_zone` | Delete a zone (fails if used by a program) |
+| `wateringhub.create_program` | Create a program (id, name, schedule, zones with durations) |
+| `wateringhub.update_program` | Update a program |
+| `wateringhub.delete_program` | Delete a program and its switch entity |
+
+### Example: create a zone via service
+
+```yaml
+service: wateringhub.create_zone
+data:
+  id: jardin
+  name: Jardin complet
+  valves:
+    - valve_1
+    - valve_2
+```
+
+### Example: create a program via service
+
+```yaml
+service: wateringhub.create_program
+data:
+  id: prog_quotidien
+  name: Arrosage quotidien
+  schedule:
+    type: daily
+    time: "22:00"
+  zones:
+    - zone_id: jardin
+      valves:
+        - valve_id: valve_1
+          duration: 15
+        - valve_id: valve_2
+          duration: 20
+```
 
 ## Events
 

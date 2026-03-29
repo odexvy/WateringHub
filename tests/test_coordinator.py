@@ -27,24 +27,32 @@ def mock_hass():
 
 
 @pytest.fixture
-def coordinator(mock_hass, sample_config):
-    """Create a coordinator with sample config."""
-    return WateringHubCoordinator(mock_hass, sample_config)
+def coordinator(mock_hass, sample_valves, sample_zones, sample_programs):
+    """Create a coordinator with sample data."""
+    coord = WateringHubCoordinator(mock_hass, sample_valves)
+    # Manually load zones and programs (bypassing storage)
+    coord._zones = {z["id"]: z for z in sample_zones}
+    coord._programs = {p["id"]: dict(p) for p in sample_programs}
+    coord._active_program = "prog_a"
+    # Mock storage
+    coord._store = MagicMock()
+    coord._store.async_save = AsyncMock()
+    return coord
 
 
 class TestInit:
     """Test coordinator initialization."""
 
     def test_parses_valves(self, coordinator):
-        assert "valve_1" in coordinator._valves
-        assert "valve_2" in coordinator._valves
-        assert coordinator._valves["valve_1"]["name"] == "Test Valve 1"
+        assert "valve_1" in coordinator.valves
+        assert "valve_2" in coordinator.valves
+        assert coordinator.valves["valve_1"]["name"] == "Test Valve 1"
 
-    def test_parses_zones(self, coordinator):
-        assert "zone_1" in coordinator._zones
-        assert len(coordinator._zones["zone_1"]["valves"]) == 2
+    def test_has_zones(self, coordinator):
+        assert "zone_1" in coordinator.zones
+        assert len(coordinator.zones["zone_1"]["valves"]) == 2
 
-    def test_parses_programs(self, coordinator):
+    def test_has_programs(self, coordinator):
         assert "prog_a" in coordinator.programs
         assert "prog_b" in coordinator.programs
         assert coordinator.programs["prog_a"]["enabled"] is True
@@ -80,9 +88,13 @@ class TestMutex:
     async def test_enable_stops_running_program(self, coordinator, mock_hass):
         coordinator._running_program = "prog_a"
         await coordinator.async_enable_program("prog_b")
-        # stop_all should have been triggered (closes valves)
         assert mock_hass.services.async_call.called
         assert coordinator.programs["prog_b"]["enabled"] is True
+
+    @pytest.mark.asyncio
+    async def test_enable_persists(self, coordinator):
+        await coordinator.async_enable_program("prog_b")
+        coordinator._store.async_save.assert_called()
 
 
 class TestScheduling:
@@ -94,28 +106,20 @@ class TestScheduling:
         assert coordinator._should_run_today(program, now) is True
 
     def test_should_run_every_n_days_match(self, coordinator):
-        # start_date is 2026-01-01, n=2. Day 0 (Jan 1) runs, day 2 (Jan 3) runs.
         now = datetime(2026, 1, 3, 8, 0)
         program = coordinator.programs["prog_b"]
         assert coordinator._should_run_today(program, now) is True
 
     def test_should_run_every_n_days_no_match(self, coordinator):
-        # Day 1 (Jan 2) should NOT run
         now = datetime(2026, 1, 2, 8, 0)
         program = coordinator.programs["prog_b"]
         assert coordinator._should_run_today(program, now) is False
 
     def test_should_run_weekdays(self, coordinator):
-        # Create a weekdays program
-        program = {
-            "schedule": {"type": "weekdays", "days": ["mon", "fri"]},
-        }
-        # 2026-03-30 is a Monday
-        now = datetime(2026, 3, 30, 22, 0)
+        program = {"schedule": {"type": "weekdays", "days": ["mon", "fri"]}}
+        now = datetime(2026, 3, 30, 22, 0)  # Monday
         assert coordinator._should_run_today(program, now) is True
-
-        # 2026-03-31 is a Tuesday
-        now = datetime(2026, 3, 31, 22, 0)
+        now = datetime(2026, 3, 31, 22, 0)  # Tuesday
         assert coordinator._should_run_today(program, now) is False
 
     def test_day_map_completeness(self):
@@ -137,7 +141,6 @@ class TestNextRun:
 
     @patch("custom_components.wateringhub.coordinator.dt_util")
     def test_next_run_past_today(self, mock_dt, coordinator):
-        # If it's already 23:00, next run is tomorrow
         mock_dt.now.return_value = datetime(2026, 3, 29, 23, 0, tzinfo=None)
         coordinator._recalculate_next_run()
         assert coordinator.next_run is not None
@@ -189,3 +192,74 @@ class TestProgramDetails:
         details = coordinator.get_program_details("nonexistent")
         assert details["total_duration"] == 0
         assert details["zones"] == []
+
+
+class TestCRUDZones:
+    """Test zone CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_zone(self, coordinator):
+        await coordinator.async_create_zone("zone_2", "New Zone", ["valve_1"])
+        assert "zone_2" in coordinator.zones
+        assert coordinator.zones["zone_2"]["name"] == "New Zone"
+
+    @pytest.mark.asyncio
+    async def test_create_zone_duplicate(self, coordinator):
+        with pytest.raises(ValueError, match="already exists"):
+            await coordinator.async_create_zone("zone_1", "Dup", ["valve_1"])
+
+    @pytest.mark.asyncio
+    async def test_create_zone_unknown_valve(self, coordinator):
+        with pytest.raises(ValueError, match="Unknown valve"):
+            await coordinator.async_create_zone("zone_2", "Bad", ["nonexistent"])
+
+    @pytest.mark.asyncio
+    async def test_update_zone(self, coordinator):
+        await coordinator.async_update_zone("zone_1", name="Renamed")
+        assert coordinator.zones["zone_1"]["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_delete_zone_in_use(self, coordinator):
+        with pytest.raises(ValueError, match="used by program"):
+            await coordinator.async_delete_zone("zone_1")
+
+    @pytest.mark.asyncio
+    async def test_delete_zone(self, coordinator):
+        await coordinator.async_create_zone("zone_unused", "Unused", ["valve_1"])
+        await coordinator.async_delete_zone("zone_unused")
+        assert "zone_unused" not in coordinator.zones
+
+
+class TestCRUDPrograms:
+    """Test program CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_program(self, coordinator):
+        coordinator._add_entities_callback = MagicMock()
+        await coordinator.async_create_program(
+            "prog_c",
+            "Program C",
+            {"type": "daily", "time": "06:00"},
+            [{"zone_id": "zone_1", "valves": [{"valve_id": "valve_1", "duration": 5}]}],
+        )
+        assert "prog_c" in coordinator.programs
+        coordinator._add_entities_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_program_duplicate(self, coordinator):
+        with pytest.raises(ValueError, match="already exists"):
+            await coordinator.async_create_program(
+                "prog_a", "Dup", {"type": "daily", "time": "06:00"}, []
+            )
+
+    @pytest.mark.asyncio
+    async def test_update_program(self, coordinator):
+        await coordinator.async_update_program("prog_a", name="Renamed")
+        assert coordinator.programs["prog_a"]["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_delete_program(self, coordinator):
+        coordinator._remove_entity_callback = MagicMock()
+        await coordinator.async_delete_program("prog_b")
+        assert "prog_b" not in coordinator.programs
+        coordinator._remove_entity_callback.assert_called_once_with("prog_b")

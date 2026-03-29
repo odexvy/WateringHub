@@ -10,9 +10,10 @@ from datetime import date, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import EVENT_TYPE, VALVE_PAUSE_SECONDS
+from .const import EVENT_TYPE, STORAGE_KEY, STORAGE_VERSION, VALVE_PAUSE_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,11 +25,14 @@ DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 class WateringHubCoordinator:
     """Central coordinator for WateringHub."""
 
-    def __init__(self, hass: HomeAssistant, config: dict) -> None:
+    def __init__(self, hass: HomeAssistant, valves: dict[str, dict]) -> None:
         self.hass = hass
-        self._valves: dict[str, dict] = {v["id"]: v for v in config["valves"]}
-        self._zones: dict[str, dict] = {z["id"]: z for z in config["zones"]}
-        self._programs: dict[str, dict] = {p["id"]: dict(p) for p in config["programs"]}
+        self._valves: dict[str, dict] = valves
+        self._zones: dict[str, dict] = {}
+        self._programs: dict[str, dict] = {}
+        self._active_program: str | None = None
+
+        self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
 
         self._running_program: str | None = None
         self._cancel_event: asyncio.Event = asyncio.Event()
@@ -52,7 +56,48 @@ class WateringHubCoordinator:
         self._valves_total: int = 0
         self._error_message: str | None = None
 
+        # Callback for dynamic entity management
+        self._add_entities_callback = None
+        self._remove_entity_callback = None
+
+    # --- Storage ---
+
+    async def async_load(self) -> None:
+        """Load zones, programs, and active_program from .storage."""
+        data = await self._store.async_load()
+        if data:
+            self._zones = {z["id"]: z for z in data.get("zones", [])}
+            self._programs = {p["id"]: dict(p) for p in data.get("programs", [])}
+            self._active_program = data.get("active_program")
+            # Restore enabled state
+            for pid in self._programs:
+                self._programs[pid]["enabled"] = pid == self._active_program
+            _LOGGER.info(
+                "Loaded %d zones, %d programs from storage",
+                len(self._zones),
+                len(self._programs),
+            )
+        else:
+            _LOGGER.info("No stored data found, starting fresh")
+
+    async def _async_save(self) -> None:
+        """Persist zones, programs, and active_program to .storage."""
+        data = {
+            "zones": list(self._zones.values()),
+            "programs": list(self._programs.values()),
+            "active_program": self._active_program,
+        }
+        await self._store.async_save(data)
+
     # --- State accessors ---
+
+    @property
+    def valves(self) -> dict[str, dict]:
+        return self._valves
+
+    @property
+    def zones(self) -> dict[str, dict]:
+        return self._zones
 
     @property
     def programs(self) -> dict[str, dict]:
@@ -137,7 +182,138 @@ class WateringHubCoordinator:
 
     def _notify_listeners(self) -> None:
         for callback in self._listeners:
-            self.hass.loop.call_soon_threadsafe(callback)
+            callback()
+
+    def set_entity_callbacks(self, add_callback, remove_callback) -> None:
+        """Set callbacks for dynamic entity add/remove."""
+        self._add_entities_callback = add_callback
+        self._remove_entity_callback = remove_callback
+
+    # --- CRUD: Zones ---
+
+    async def async_create_zone(self, zone_id: str, name: str, valves: list[str]) -> None:
+        """Create a new zone."""
+        if zone_id in self._zones:
+            raise ValueError(f"Zone '{zone_id}' already exists")
+        for vid in valves:
+            if vid not in self._valves:
+                raise ValueError(f"Unknown valve '{vid}'")
+        self._zones[zone_id] = {"id": zone_id, "name": name, "valves": valves}
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Zone '%s' created", zone_id)
+
+    async def async_update_zone(
+        self, zone_id: str, name: str | None = None, valves: list[str] | None = None
+    ) -> None:
+        """Update an existing zone."""
+        if zone_id not in self._zones:
+            raise ValueError(f"Zone '{zone_id}' not found")
+        if name is not None:
+            self._zones[zone_id]["name"] = name
+        if valves is not None:
+            for vid in valves:
+                if vid not in self._valves:
+                    raise ValueError(f"Unknown valve '{vid}'")
+            self._zones[zone_id]["valves"] = valves
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Zone '%s' updated", zone_id)
+
+    async def async_delete_zone(self, zone_id: str) -> None:
+        """Delete a zone."""
+        if zone_id not in self._zones:
+            raise ValueError(f"Zone '{zone_id}' not found")
+        # Check if any program references this zone
+        for prog in self._programs.values():
+            for zone_ref in prog.get("zones", []):
+                if zone_ref["zone_id"] == zone_id:
+                    raise ValueError(
+                        f"Cannot delete zone '{zone_id}': used by program '{prog['id']}'"
+                    )
+        del self._zones[zone_id]
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Zone '%s' deleted", zone_id)
+
+    # --- CRUD: Programs ---
+
+    def _validate_program_references(self, zones: list[dict]) -> None:
+        """Validate that program zone/valve references exist."""
+        for zone_ref in zones:
+            zone_id = zone_ref["zone_id"]
+            if zone_id not in self._zones:
+                raise ValueError(f"Unknown zone '{zone_id}'")
+            zone_valves = set(self._zones[zone_id]["valves"])
+            for valve_ref in zone_ref.get("valves", []):
+                vid = valve_ref["valve_id"]
+                if vid not in self._valves:
+                    raise ValueError(f"Unknown valve '{vid}'")
+                if vid not in zone_valves:
+                    raise ValueError(f"Valve '{vid}' is not in zone '{zone_id}'")
+
+    async def async_create_program(
+        self, program_id: str, name: str, schedule: dict, zones: list[dict]
+    ) -> None:
+        """Create a new program."""
+        if program_id in self._programs:
+            raise ValueError(f"Program '{program_id}' already exists")
+        self._validate_program_references(zones)
+        program = {
+            "id": program_id,
+            "name": name,
+            "enabled": False,
+            "schedule": schedule,
+            "zones": zones,
+        }
+        self._programs[program_id] = program
+        await self._async_save()
+        # Dynamically add the switch entity
+        if self._add_entities_callback:
+            self._add_entities_callback(program_id, program)
+        self._notify_listeners()
+        _LOGGER.info("Program '%s' created", program_id)
+
+    async def async_update_program(
+        self,
+        program_id: str,
+        name: str | None = None,
+        schedule: dict | None = None,
+        zones: list[dict] | None = None,
+    ) -> None:
+        """Update an existing program."""
+        if program_id not in self._programs:
+            raise ValueError(f"Program '{program_id}' not found")
+        prog = self._programs[program_id]
+        if name is not None:
+            prog["name"] = name
+        if schedule is not None:
+            prog["schedule"] = schedule
+        if zones is not None:
+            self._validate_program_references(zones)
+            prog["zones"] = zones
+        await self._async_save()
+        self._recalculate_next_run()
+        self._notify_listeners()
+        _LOGGER.info("Program '%s' updated", program_id)
+
+    async def async_delete_program(self, program_id: str) -> None:
+        """Delete a program."""
+        if program_id not in self._programs:
+            raise ValueError(f"Program '{program_id}' not found")
+        if self._running_program == program_id:
+            await self.async_stop_all()
+        was_active = self._active_program == program_id
+        del self._programs[program_id]
+        if was_active:
+            self._active_program = None
+        # Dynamically remove the switch entity
+        if self._remove_entity_callback:
+            self._remove_entity_callback(program_id)
+        await self._async_save()
+        self._recalculate_next_run()
+        self._notify_listeners()
+        _LOGGER.info("Program '%s' deleted", program_id)
 
     # --- Program details (for switch attributes) ---
 
@@ -189,17 +365,25 @@ class WateringHubCoordinator:
         for pid in self._programs:
             self._programs[pid]["enabled"] = pid == program_id
 
+        self._active_program = program_id
+        await self._async_save()
         self._recalculate_next_run()
         self._notify_listeners()
         _LOGGER.info("Program '%s' enabled", program_id)
 
     async def async_disable_program(self, program_id: str) -> None:
         """Disable a specific program."""
+        if program_id not in self._programs:
+            raise ValueError(f"Program '{program_id}' not found")
         self._programs[program_id]["enabled"] = False
 
         if self._running_program == program_id:
             await self.async_stop_all()
 
+        if self._active_program == program_id:
+            self._active_program = None
+
+        await self._async_save()
         self._recalculate_next_run()
         self._notify_listeners()
         _LOGGER.info("Program '%s' disabled", program_id)
@@ -330,11 +514,11 @@ class WateringHubCoordinator:
 
     async def async_run_program(self, program_id: str) -> None:
         """Execute a program: run each zone's valves sequentially."""
-        if self._run_lock.locked():
-            _LOGGER.warning("Program execution already in progress, skipping")
-            return
-
         async with self._run_lock:
+            if self._running_program:
+                _LOGGER.warning("Program execution already in progress, skipping")
+                return
+
             program = self._programs.get(program_id)
             if not program:
                 _LOGGER.error("Program '%s' not found", program_id)
@@ -407,7 +591,6 @@ class WateringHubCoordinator:
                     },
                 )
 
-                # Persistent notification in HA UI
                 await self.hass.services.async_call(
                     "persistent_notification",
                     "create",

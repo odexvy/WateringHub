@@ -1,73 +1,56 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
-"""Tests for config validation."""
+"""Tests for config validation — now only validates valves from YAML."""
 
 from __future__ import annotations
 
 import pytest
 import voluptuous as vol
 
-from custom_components.wateringhub.__init__ import (
-    _validate_cross_references,
-    _validate_date,
-    _validate_time,
-)
+from custom_components.wateringhub.__init__ import CONFIG_SCHEMA
 
 
-class TestValidateTime:
-    """Test time format validation."""
+class TestConfigSchema:
+    """Test YAML config validation (valves only)."""
 
-    def test_valid_time(self):
-        assert _validate_time("22:00") == "22:00"
-        assert _validate_time("00:00") == "00:00"
-        assert _validate_time("23:59") == "23:59"
+    def test_valid_config(self):
+        config = {
+            "wateringhub": {
+                "valves": [
+                    {"id": "v1", "name": "Valve 1", "entity_id": "switch.v1"},
+                ]
+            }
+        }
+        result = CONFIG_SCHEMA(config)
+        assert len(result["wateringhub"]["valves"]) == 1
 
-    def test_invalid_format(self):
+    def test_valve_requires_id(self):
+        config = {"wateringhub": {"valves": [{"name": "Valve 1", "entity_id": "switch.v1"}]}}
         with pytest.raises(vol.Invalid):
-            _validate_time("25:00")
+            CONFIG_SCHEMA(config)
 
-    def test_invalid_string(self):
+    def test_valve_requires_entity_id(self):
+        config = {"wateringhub": {"valves": [{"id": "v1", "name": "Valve 1"}]}}
         with pytest.raises(vol.Invalid):
-            _validate_time("hello")
+            CONFIG_SCHEMA(config)
 
-    def test_invalid_minutes(self):
+    def test_valves_required(self):
+        config = {"wateringhub": {}}
         with pytest.raises(vol.Invalid):
-            _validate_time("22:60")
+            CONFIG_SCHEMA(config)
 
-
-class TestValidateDate:
-    """Test date format validation."""
-
-    def test_valid_date(self):
-        assert _validate_date("2026-03-28") == "2026-03-28"
-
-    def test_invalid_format(self):
-        with pytest.raises(vol.Invalid):
-            _validate_date("28/03/2026")
-
-    def test_invalid_date(self):
-        with pytest.raises(vol.Invalid):
-            _validate_date("2026-13-01")
-
-
-class TestCrossReferences:
-    """Test cross-reference validation."""
-
-    def test_valid_references(self, sample_config):
-        _validate_cross_references(sample_config)
-
-    def test_program_references_unknown_valve(self, sample_config):
-        sample_config["programs"][0]["zones"][0]["valves"][0]["valve_id"] = "nonexistent"
-        with pytest.raises(vol.Invalid, match="unknown valve"):
-            _validate_cross_references(sample_config)
-
-    def test_program_references_unknown_zone(self, sample_config):
-        sample_config["programs"][0]["zones"][0]["zone_id"] = "nonexistent"
-        with pytest.raises(vol.Invalid, match="unknown zone"):
-            _validate_cross_references(sample_config)
-
-    def test_program_valve_not_in_zone(self, sample_config):
-        sample_config["programs"][0]["zones"][0]["valves"][0]["valve_id"] = "valve_2"
-        sample_config["zones"][0]["valves"] = ["valve_1"]
-        with pytest.raises(vol.Invalid, match="not in zone"):
-            _validate_cross_references(sample_config)
+    def test_optional_flow_sensor(self):
+        config = {
+            "wateringhub": {
+                "valves": [
+                    {
+                        "id": "v1",
+                        "name": "Valve 1",
+                        "entity_id": "switch.v1",
+                        "flow_sensor": "sensor.flow_v1",
+                    }
+                ]
+            }
+        }
+        result = CONFIG_SCHEMA(config)
+        assert result["wateringhub"]["valves"][0]["flow_sensor"] == "sensor.flow_v1"

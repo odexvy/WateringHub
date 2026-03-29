@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import logging
-import re
 
 import voluptuous as vol
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP
@@ -19,30 +18,6 @@ from .coordinator import WateringHubCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-
-def _validate_time(value: str) -> str:
-    """Validate HH:MM time format."""
-    if not re.match(r"^\d{2}:\d{2}$", value):
-        raise vol.Invalid(f"Invalid time format '{value}', expected HH:MM")
-    hour, minute = map(int, value.split(":"))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        raise vol.Invalid(f"Invalid time '{value}', hour must be 0-23 and minute 0-59")
-    return value
-
-
-def _validate_date(value: str) -> str:
-    """Validate ISO date format (YYYY-MM-DD)."""
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", value):
-        raise vol.Invalid(f"Invalid date format '{value}', expected YYYY-MM-DD")
-    from datetime import date
-
-    try:
-        date.fromisoformat(value)
-    except ValueError as err:
-        raise vol.Invalid(f"Invalid date '{value}': {err}") from err
-    return value
-
-
 VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
@@ -52,7 +27,20 @@ VALVE_SCHEMA = vol.Schema(
     }
 )
 
-ZONE_SCHEMA = vol.Schema(
+CONFIG_SCHEMA = vol.Schema(
+    {
+        DOMAIN: vol.Schema(
+            {
+                vol.Required("valves"): vol.All(cv.ensure_list, [VALVE_SCHEMA]),
+            }
+        )
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+# --- Service schemas ---
+
+CREATE_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Required("name"): cv.string,
@@ -60,16 +48,17 @@ ZONE_SCHEMA = vol.Schema(
     }
 )
 
-SCHEDULE_SCHEMA = vol.Schema(
+UPDATE_ZONE_SCHEMA = vol.Schema(
     {
-        vol.Required("type"): vol.In(["daily", "every_n_days", "weekdays"]),
-        vol.Required("time"): _validate_time,
-        vol.Optional("n"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("days"): vol.All(
-            cv.ensure_list,
-            [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])],
-        ),
-        vol.Optional("start_date"): _validate_date,
+        vol.Required("id"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("valves"): vol.All(cv.ensure_list, [cv.string]),
+    }
+)
+
+DELETE_ZONE_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
     }
 )
 
@@ -87,50 +76,42 @@ PROGRAM_ZONE_SCHEMA = vol.Schema(
     }
 )
 
-PROGRAM_SCHEMA = vol.Schema(
+SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("type"): vol.In(["daily", "every_n_days", "weekdays"]),
+        vol.Required("time"): cv.string,
+        vol.Optional("n"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("days"): vol.All(
+            cv.ensure_list,
+            [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])],
+        ),
+        vol.Optional("start_date"): cv.string,
+    }
+)
+
+CREATE_PROGRAM_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Required("enabled"): cv.boolean,
         vol.Required("schedule"): SCHEDULE_SCHEMA,
         vol.Required("zones"): vol.All(cv.ensure_list, [PROGRAM_ZONE_SCHEMA]),
     }
 )
 
-CONFIG_SCHEMA = vol.Schema(
+UPDATE_PROGRAM_SCHEMA = vol.Schema(
     {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required("valves"): vol.All(cv.ensure_list, [VALVE_SCHEMA]),
-                vol.Required("zones"): vol.All(cv.ensure_list, [ZONE_SCHEMA]),
-                vol.Required("programs"): vol.All(cv.ensure_list, [PROGRAM_SCHEMA]),
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
+        vol.Required("id"): cv.string,
+        vol.Optional("name"): cv.string,
+        vol.Optional("schedule"): SCHEDULE_SCHEMA,
+        vol.Optional("zones"): vol.All(cv.ensure_list, [PROGRAM_ZONE_SCHEMA]),
+    }
 )
 
-
-def _validate_cross_references(conf: dict) -> None:
-    """Validate that zones reference existing valves and programs reference existing zones/valves."""
-    valve_ids = {v["id"] for v in conf["valves"]}
-    zone_ids = {z["id"] for z in conf["zones"]}
-    zone_valves = {z["id"]: set(z["valves"]) for z in conf["zones"]}
-
-    for program in conf["programs"]:
-        for zone_ref in program["zones"]:
-            zone_id = zone_ref["zone_id"]
-            if zone_id not in zone_ids:
-                raise vol.Invalid(f"Program '{program['id']}' references unknown zone '{zone_id}'")
-            for valve_ref in zone_ref["valves"]:
-                vid = valve_ref["valve_id"]
-                if vid not in valve_ids:
-                    raise vol.Invalid(f"Program '{program['id']}' references unknown valve '{vid}'")
-                if vid not in zone_valves.get(zone_id, set()):
-                    raise vol.Invalid(
-                        f"Program '{program['id']}' uses valve '{vid}' "
-                        f"which is not in zone '{zone_id}'"
-                    )
+DELETE_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
+    }
+)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -139,27 +120,78 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         return True
 
     conf = config[DOMAIN]
+    valves = {v["id"]: v for v in conf["valves"]}
 
     try:
-        _validate_cross_references(conf)
-    except vol.Invalid as err:
-        _LOGGER.error("Invalid WateringHub configuration: %s", err)
-        return False
-
-    try:
-        coordinator = WateringHubCoordinator(hass, conf)
+        coordinator = WateringHubCoordinator(hass, valves)
+        await coordinator.async_load()
         hass.data[DOMAIN] = coordinator
 
         for platform in PLATFORMS:
             await async_load_platform(hass, platform, DOMAIN, {}, config)
 
-        async def handle_stop_all(call: ServiceCall) -> None:
+        # --- Register services ---
+
+        async def handle_stop_all(_call: ServiceCall) -> None:
             await coordinator.async_stop_all()
 
-        hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
+        async def handle_create_zone(call: ServiceCall) -> None:
+            await coordinator.async_create_zone(
+                call.data["id"],
+                call.data["name"],
+                call.data["valves"],
+            )
 
-        async def handle_shutdown(event) -> None:
-            """Clean up on HA shutdown."""
+        async def handle_update_zone(call: ServiceCall) -> None:
+            await coordinator.async_update_zone(
+                call.data["id"],
+                name=call.data.get("name"),
+                valves=call.data.get("valves"),
+            )
+
+        async def handle_delete_zone(call: ServiceCall) -> None:
+            await coordinator.async_delete_zone(call.data["id"])
+
+        async def handle_create_program(call: ServiceCall) -> None:
+            await coordinator.async_create_program(
+                call.data["id"],
+                call.data["name"],
+                call.data["schedule"],
+                call.data["zones"],
+            )
+
+        async def handle_update_program(call: ServiceCall) -> None:
+            await coordinator.async_update_program(
+                call.data["id"],
+                name=call.data.get("name"),
+                schedule=call.data.get("schedule"),
+                zones=call.data.get("zones"),
+            )
+
+        async def handle_delete_program(call: ServiceCall) -> None:
+            await coordinator.async_delete_program(call.data["id"])
+
+        hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
+        hass.services.async_register(
+            DOMAIN, "create_zone", handle_create_zone, schema=CREATE_ZONE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "update_zone", handle_update_zone, schema=UPDATE_ZONE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "delete_zone", handle_delete_zone, schema=DELETE_ZONE_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "create_program", handle_create_program, schema=CREATE_PROGRAM_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "update_program", handle_update_program, schema=UPDATE_PROGRAM_SCHEMA
+        )
+        hass.services.async_register(
+            DOMAIN, "delete_program", handle_delete_program, schema=DELETE_PROGRAM_SCHEMA
+        )
+
+        async def handle_shutdown(_event) -> None:
             await coordinator.async_stop()
 
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_shutdown)

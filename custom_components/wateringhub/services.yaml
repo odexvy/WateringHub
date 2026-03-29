@@ -1,3 +1,117 @@
 stop_all:
   name: Stop All
   description: Close all valves immediately and cancel any running program.
+
+create_zone:
+  name: Create Zone
+  description: Create a new zone grouping valves together.
+  fields:
+    id:
+      name: Zone ID
+      description: Unique identifier for the zone.
+      required: true
+      example: "jardin"
+      selector:
+        text:
+    name:
+      name: Zone Name
+      description: Display name for the zone.
+      required: true
+      example: "Jardin complet"
+      selector:
+        text:
+    valves:
+      name: Valves
+      description: List of valve IDs belonging to this zone.
+      required: true
+      example: "[cedre, terrasse]"
+
+update_zone:
+  name: Update Zone
+  description: Update an existing zone.
+  fields:
+    id:
+      name: Zone ID
+      description: ID of the zone to update.
+      required: true
+      selector:
+        text:
+    name:
+      name: Zone Name
+      description: New display name.
+      selector:
+        text:
+    valves:
+      name: Valves
+      description: New list of valve IDs.
+
+delete_zone:
+  name: Delete Zone
+  description: Delete a zone. Fails if any program references it.
+  fields:
+    id:
+      name: Zone ID
+      description: ID of the zone to delete.
+      required: true
+      selector:
+        text:
+
+create_program:
+  name: Create Program
+  description: Create a new watering program with schedule and valve durations.
+  fields:
+    id:
+      name: Program ID
+      description: Unique identifier for the program.
+      required: true
+      example: "prog_quotidien"
+      selector:
+        text:
+    name:
+      name: Program Name
+      description: Display name for the program.
+      required: true
+      example: "Arrosage quotidien"
+      selector:
+        text:
+    schedule:
+      name: Schedule
+      description: "Schedule object with type (daily/every_n_days/weekdays), time, and optional n/days/start_date."
+      required: true
+    zones:
+      name: Zones
+      description: "List of zone references with valve durations."
+      required: true
+
+update_program:
+  name: Update Program
+  description: Update an existing program.
+  fields:
+    id:
+      name: Program ID
+      description: ID of the program to update.
+      required: true
+      selector:
+        text:
+    name:
+      name: Program Name
+      description: New display name.
+      selector:
+        text:
+    schedule:
+      name: Schedule
+      description: New schedule object.
+    zones:
+      name: Zones
+      description: New zone references with valve durations.
+
+delete_program:
+  name: Delete Program
+  description: Delete a program and its switch entity.
+  fields:
+    id:
+      name: Program ID
+      description: ID of the program to delete.
+      required: true
+      selector:
+        text:

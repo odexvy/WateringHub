@@ -7,3 +7,5 @@ EVENT_TYPE = "wateringhub_event"
 PLATFORMS = ["switch", "sensor"]
 
 VALVE_PAUSE_SECONDS = 5
+STORAGE_KEY = "wateringhub"
+STORAGE_VERSION = 1

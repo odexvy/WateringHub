@@ -38,6 +38,8 @@ async def async_setup_platform(
 class StatusSensor(SensorEntity):
     """Current status: idle, running, error."""
 
+    _attr_should_poll = False
+
     def __init__(self, coordinator: WateringHubCoordinator) -> None:
         self._coordinator = coordinator
         self._attr_name = "WateringHub Status"
@@ -49,7 +51,11 @@ class StatusSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        return self._coordinator.execution_state
+        return {
+            **self._coordinator.execution_state,
+            "available_valves": list(self._coordinator.valves.values()),
+            "zones": list(self._coordinator.zones.values()),
+        }
 
     async def async_added_to_hass(self) -> None:
         self._coordinator.add_listener(self.async_schedule_update_ha_state)
@@ -62,6 +68,7 @@ class NextRunSensor(SensorEntity):
     """Next scheduled run datetime."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_should_poll = False
 
     def __init__(self, coordinator: WateringHubCoordinator) -> None:
         self._coordinator = coordinator
@@ -83,6 +90,7 @@ class LastRunSensor(SensorEntity):
     """Last completed run datetime."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_should_poll = False
 
     def __init__(self, coordinator: WateringHubCoordinator) -> None:
         self._coordinator = coordinator

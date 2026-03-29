@@ -4,6 +4,30 @@
     "stop_all": {
       "name": "Stop All",
       "description": "Close all valves immediately and cancel any running program."
+    },
+    "create_zone": {
+      "name": "Create Zone",
+      "description": "Create a new zone grouping valves together."
+    },
+    "update_zone": {
+      "name": "Update Zone",
+      "description": "Update an existing zone."
+    },
+    "delete_zone": {
+      "name": "Delete Zone",
+      "description": "Delete a zone."
+    },
+    "create_program": {
+      "name": "Create Program",
+      "description": "Create a new watering program."
+    },
+    "update_program": {
+      "name": "Update Program",
+      "description": "Update an existing program."
+    },
+    "delete_program": {
+      "name": "Delete Program",
+      "description": "Delete a program."
     }
   }
 }
