@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
 """Shared test fixtures for WateringHub."""
+
 from __future__ import annotations
 
 import pytest

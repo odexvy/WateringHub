@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
 """WateringHub coordinator — central logic for scheduling, execution, and mutex."""
+
 from __future__ import annotations
 
 import asyncio
@@ -90,17 +91,21 @@ class WateringHubCoordinator:
                 valve = self._valves.get(valve_ref["valve_id"])
                 if not valve:
                     continue
-                valves.append({
-                    "valve_id": valve_ref["valve_id"],
-                    "valve_name": valve["name"],
-                    "duration": valve_ref["duration"],
-                })
+                valves.append(
+                    {
+                        "valve_id": valve_ref["valve_id"],
+                        "valve_name": valve["name"],
+                        "duration": valve_ref["duration"],
+                    }
+                )
                 total_duration += valve_ref["duration"]
-            zones.append({
-                "zone_id": zone_ref["zone_id"],
-                "zone_name": zone["name"],
-                "valves": valves,
-            })
+            zones.append(
+                {
+                    "zone_id": zone_ref["zone_id"],
+                    "zone_name": zone["name"],
+                    "valves": valves,
+                }
+            )
 
         return {
             "program_id": program_id,
@@ -139,14 +144,15 @@ class WateringHubCoordinator:
         self._cancel_event.set()
         self._running_program = None
 
-        # Only reset to idle if not in error state (C1 fix)
+        # Only reset to idle if not in error state
         if self._status != "error":
             self._status = "idle"
 
         for valve in self._valves.values():
             try:
                 await self.hass.services.async_call(
-                    "switch", "turn_off",
+                    "switch",
+                    "turn_off",
                     {"entity_id": valve["entity_id"]},
                     blocking=True,
                 )
@@ -164,7 +170,8 @@ class WateringHubCoordinator:
         self._recalculate_next_run()
 
         unsub = async_track_time_change(
-            self.hass, self._async_time_tick,
+            self.hass,
+            self._async_time_tick,
             second=0,
         )
         self._unsub_time.append(unsub)
@@ -273,10 +280,10 @@ class WateringHubCoordinator:
             self._status = "running"
             self._notify_listeners()
 
-            self.hass.bus.async_fire(EVENT_TYPE, {
-                "action": "program_started",
-                "program": program_id,
-            })
+            self.hass.bus.async_fire(
+                EVENT_TYPE,
+                {"action": "program_started", "program": program_id},
+            )
 
             try:
                 for zone_ref in program["zones"]:
@@ -292,7 +299,10 @@ class WateringHubCoordinator:
 
                         valve = self._valves.get(valve_ref["valve_id"])
                         if not valve:
-                            _LOGGER.warning("Valve '%s' not found, skipping", valve_ref["valve_id"])
+                            _LOGGER.warning(
+                                "Valve '%s' not found, skipping",
+                                valve_ref["valve_id"],
+                            )
                             continue
 
                         await self._async_run_valve(valve, valve_ref["duration"])
@@ -301,21 +311,24 @@ class WateringHubCoordinator:
                 self._last_run = dt_util.now()
                 self._recalculate_next_run()
 
-                self.hass.bus.async_fire(EVENT_TYPE, {
-                    "action": "program_finished",
-                    "program": program_id,
-                })
+                self.hass.bus.async_fire(
+                    EVENT_TYPE,
+                    {"action": "program_finished", "program": program_id},
+                )
 
             except Exception as err:
                 _LOGGER.exception("Error running program '%s'", program_id)
                 self._status = "error"
                 await self.async_stop_all()
 
-                self.hass.bus.async_fire(EVENT_TYPE, {
-                    "action": "program_error",
-                    "program": program_id,
-                    "error": str(err),
-                })
+                self.hass.bus.async_fire(
+                    EVENT_TYPE,
+                    {
+                        "action": "program_error",
+                        "program": program_id,
+                        "error": str(err),
+                    },
+                )
 
             finally:
                 self._running_program = None
@@ -329,14 +342,18 @@ class WateringHubCoordinator:
 
         _LOGGER.info("Opening valve '%s' for %d min", valve_id, duration_minutes)
 
-        self.hass.bus.async_fire(EVENT_TYPE, {
-            "action": "valve_opened",
-            "valve": valve_id,
-            "duration": duration_seconds,
-        })
+        self.hass.bus.async_fire(
+            EVENT_TYPE,
+            {
+                "action": "valve_opened",
+                "valve": valve_id,
+                "duration": duration_seconds,
+            },
+        )
 
         await self.hass.services.async_call(
-            "switch", "turn_on",
+            "switch",
+            "turn_on",
             {"entity_id": entity_id},
             blocking=True,
         )
@@ -348,15 +365,16 @@ class WateringHubCoordinator:
             await asyncio.sleep(1)
 
         await self.hass.services.async_call(
-            "switch", "turn_off",
+            "switch",
+            "turn_off",
             {"entity_id": entity_id},
             blocking=True,
         )
 
-        self.hass.bus.async_fire(EVENT_TYPE, {
-            "action": "valve_closed",
-            "valve": valve_id,
-        })
+        self.hass.bus.async_fire(
+            EVENT_TYPE,
+            {"action": "valve_closed", "valve": valve_id},
+        )
 
         _LOGGER.info("Valve '%s' closed", valve_id)
 

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
 """The WateringHub integration."""
+
 from __future__ import annotations
 
 import logging
@@ -34,6 +35,7 @@ def _validate_date(value: str) -> str:
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", value):
         raise vol.Invalid(f"Invalid date format '{value}', expected YYYY-MM-DD")
     from datetime import date
+
     try:
         date.fromisoformat(value)
     except ValueError as err:
@@ -70,7 +72,10 @@ SCHEDULE_SCHEMA = vol.Schema(
         vol.Required("type"): vol.In(["daily", "every_n_days", "weekdays"]),
         vol.Required("time"): _validate_time,
         vol.Optional("n"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("days"): vol.All(cv.ensure_list, [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])]),
+        vol.Optional("days"): vol.All(
+            cv.ensure_list,
+            [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])],
+        ),
         vol.Optional("start_date"): _validate_date,
     }
 )

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
 """Switch entities for WateringHub programs."""
+
 from __future__ import annotations
 
 import logging

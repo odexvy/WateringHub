@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 WateringHub contributors
 """Sensor entities for WateringHub."""
+
 from __future__ import annotations
 
 import logging
@@ -25,11 +26,13 @@ async def async_setup_platform(
     """Set up WateringHub sensors."""
     coordinator: WateringHubCoordinator = hass.data[DOMAIN]
 
-    async_add_entities([
-        StatusSensor(coordinator),
-        NextRunSensor(coordinator),
-        LastRunSensor(coordinator),
-    ])
+    async_add_entities(
+        [
+            StatusSensor(coordinator),
+            NextRunSensor(coordinator),
+            LastRunSensor(coordinator),
+        ]
+    )
 
 
 class StatusSensor(SensorEntity):
