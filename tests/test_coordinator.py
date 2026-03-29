@@ -77,11 +77,12 @@ class TestMutex:
         assert coordinator.programs["prog_a"]["enabled"] is False
 
     @pytest.mark.asyncio
-    async def test_enable_stops_running_program(self, coordinator):
+    async def test_enable_stops_running_program(self, coordinator, mock_hass):
         coordinator._running_program = "prog_a"
         await coordinator.async_enable_program("prog_b")
         # stop_all should have been triggered (closes valves)
-        assert coordinator.mock_hass is not None  # smoke test
+        assert mock_hass.services.async_call.called
+        assert coordinator.programs["prog_b"]["enabled"] is True
 
 
 class TestScheduling:
