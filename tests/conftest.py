@@ -27,10 +27,7 @@ def sample_config():
             {
                 "id": "zone_1",
                 "name": "Test Zone",
-                "valves": [
-                    {"valve_id": "valve_1", "duration": 10},
-                    {"valve_id": "valve_2", "duration": 15},
-                ],
+                "valves": ["valve_1", "valve_2"],
             },
         ],
         "programs": [
@@ -39,7 +36,15 @@ def sample_config():
                 "name": "Program A",
                 "enabled": True,
                 "schedule": {"type": "daily", "time": "22:00"},
-                "zones": [{"zone_id": "zone_1"}],
+                "zones": [
+                    {
+                        "zone_id": "zone_1",
+                        "valves": [
+                            {"valve_id": "valve_1", "duration": 10},
+                            {"valve_id": "valve_2", "duration": 15},
+                        ],
+                    }
+                ],
             },
             {
                 "id": "prog_b",
@@ -51,7 +56,15 @@ def sample_config():
                     "start_date": "2026-01-01",
                     "time": "08:00",
                 },
-                "zones": [{"zone_id": "zone_1"}],
+                "zones": [
+                    {
+                        "zone_id": "zone_1",
+                        "valves": [
+                            {"valve_id": "valve_1", "duration": 5},
+                            {"valve_id": "valve_2", "duration": 5},
+                        ],
+                    }
+                ],
             },
         ],
     }

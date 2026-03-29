@@ -52,18 +52,11 @@ VALVE_SCHEMA = vol.Schema(
     }
 )
 
-ZONE_VALVE_SCHEMA = vol.Schema(
-    {
-        vol.Required("valve_id"): cv.string,
-        vol.Required("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-    }
-)
-
 ZONE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Required("valves"): vol.All(cv.ensure_list, [ZONE_VALVE_SCHEMA]),
+        vol.Required("valves"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -80,9 +73,17 @@ SCHEDULE_SCHEMA = vol.Schema(
     }
 )
 
+PROGRAM_VALVE_SCHEMA = vol.Schema(
+    {
+        vol.Required("valve_id"): cv.string,
+        vol.Required("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
 PROGRAM_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required("zone_id"): cv.string,
+        vol.Required("valves"): vol.All(cv.ensure_list, [PROGRAM_VALVE_SCHEMA]),
     }
 )
 
@@ -111,23 +112,25 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 def _validate_cross_references(conf: dict) -> None:
-    """Validate that zones reference existing valves and programs reference existing zones."""
+    """Validate that zones reference existing valves and programs reference existing zones/valves."""
     valve_ids = {v["id"] for v in conf["valves"]}
     zone_ids = {z["id"] for z in conf["zones"]}
-
-    for zone in conf["zones"]:
-        for valve_ref in zone["valves"]:
-            if valve_ref["valve_id"] not in valve_ids:
-                raise vol.Invalid(
-                    f"Zone '{zone['id']}' references unknown valve '{valve_ref['valve_id']}'"
-                )
+    zone_valves = {z["id"]: set(z["valves"]) for z in conf["zones"]}
 
     for program in conf["programs"]:
         for zone_ref in program["zones"]:
-            if zone_ref["zone_id"] not in zone_ids:
-                raise vol.Invalid(
-                    f"Program '{program['id']}' references unknown zone '{zone_ref['zone_id']}'"
-                )
+            zone_id = zone_ref["zone_id"]
+            if zone_id not in zone_ids:
+                raise vol.Invalid(f"Program '{program['id']}' references unknown zone '{zone_id}'")
+            for valve_ref in zone_ref["valves"]:
+                vid = valve_ref["valve_id"]
+                if vid not in valve_ids:
+                    raise vol.Invalid(f"Program '{program['id']}' references unknown valve '{vid}'")
+                if vid not in zone_valves.get(zone_id, set()):
+                    raise vol.Invalid(
+                        f"Program '{program['id']}' uses valve '{vid}' "
+                        f"which is not in zone '{zone_id}'"
+                    )
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:

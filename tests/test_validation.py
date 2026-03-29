@@ -56,12 +56,18 @@ class TestCrossReferences:
     def test_valid_references(self, sample_config):
         _validate_cross_references(sample_config)
 
-    def test_zone_references_unknown_valve(self, sample_config):
-        sample_config["zones"][0]["valves"][0]["valve_id"] = "nonexistent"
+    def test_program_references_unknown_valve(self, sample_config):
+        sample_config["programs"][0]["zones"][0]["valves"][0]["valve_id"] = "nonexistent"
         with pytest.raises(vol.Invalid, match="unknown valve"):
             _validate_cross_references(sample_config)
 
     def test_program_references_unknown_zone(self, sample_config):
         sample_config["programs"][0]["zones"][0]["zone_id"] = "nonexistent"
         with pytest.raises(vol.Invalid, match="unknown zone"):
+            _validate_cross_references(sample_config)
+
+    def test_program_valve_not_in_zone(self, sample_config):
+        sample_config["programs"][0]["zones"][0]["valves"][0]["valve_id"] = "valve_2"
+        sample_config["zones"][0]["valves"] = ["valve_1"]
+        with pytest.raises(vol.Invalid, match="not in zone"):
             _validate_cross_references(sample_config)

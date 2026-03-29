@@ -134,7 +134,7 @@ class WateringHubCoordinator:
             if not zone:
                 continue
             valves = []
-            for valve_ref in zone["valves"]:
+            for valve_ref in zone_ref.get("valves", []):
                 valve = self._valves.get(valve_ref["valve_id"])
                 if not valve:
                     continue
@@ -328,9 +328,7 @@ class WateringHubCoordinator:
             self._status = "running"
             self._valves_done = 0
             self._valves_total = sum(
-                len(zone.get("valves", []))
-                for zone_ref in program["zones"]
-                if (zone := self._zones.get(zone_ref["zone_id"]))
+                len(zone_ref.get("valves", [])) for zone_ref in program["zones"]
             )
             self._notify_listeners()
 
@@ -349,7 +347,7 @@ class WateringHubCoordinator:
                     self._current_zone = zone_ref["zone_id"]
                     self._current_zone_name = zone["name"]
 
-                    for valve_ref in zone["valves"]:
+                    for valve_ref in zone_ref.get("valves", []):
                         if self._cancel_event.is_set():
                             _LOGGER.info("Execution cancelled")
                             return

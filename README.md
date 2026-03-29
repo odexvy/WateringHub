@@ -46,10 +46,8 @@ wateringhub:
     - id: jardin
       name: Jardin complet
       valves:
-        - valve_id: valve_1
-          duration: 15   # minutes
-        - valve_id: valve_2
-          duration: 20
+        - valve_1
+        - valve_2
 
   programs:
     - id: prog_quotidien
@@ -60,6 +58,11 @@ wateringhub:
         time: "22:00"
       zones:
         - zone_id: jardin
+          valves:
+            - valve_id: valve_1
+              duration: 15   # minutes
+            - valve_id: valve_2
+              duration: 20
 
     - id: prog_j2
       name: Arrosage J+2
@@ -71,6 +74,11 @@ wateringhub:
         time: "22:00"
       zones:
         - zone_id: jardin
+          valves:
+            - valve_id: valve_1
+              duration: 10
+            - valve_id: valve_2
+              duration: 10
 ```
 
 ### Schedule types
