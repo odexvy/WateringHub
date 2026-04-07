@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m ruff check custom_components/wateringhub/coordinator.py)"
+    ]
+  }
+}

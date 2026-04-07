@@ -1,8 +1,13 @@
 # WateringHub
 
-Custom Home Assistant component for automated watering management, installable via [HACS](https://hacs.xyz/).
+Custom [Home Assistant](https://www.home-assistant.io/) integration for automated watering management.
 
-> **Requires:** [WateringHub Card](https://github.com/odexvy/WateringHubCard) — companion Lovelace card for the dashboard UI (install via HACS as a Frontend plugin)
+> **Requires [WateringHub Card](https://github.com/odexvy/WateringHubCard)** for the dashboard UI. Install it via HACS (Frontend > Plugin).
+
+| Repository | Role |
+|------------|------|
+| [WateringHub](https://github.com/odexvy/WateringHub) | Backend — this repo (HA custom integration) |
+| [WateringHubCard](https://github.com/odexvy/WateringHubCard) | Frontend — HA custom card |
 
 ## Features
 
@@ -12,17 +17,16 @@ Custom Home Assistant component for automated watering management, installable v
 - Per-program valve durations
 - Strict mutex: only one program active at a time
 - Sequential valve execution with real-time progress tracking
+- Valve sequence with status (`done` / `running` / `pending`) exposed on status sensor
 - State persisted across restarts (`.storage/wateringhub`)
 - Error handling with persistent HA notifications
 
-## Installation
+## Installation (HACS)
 
-### HACS (recommended)
-
-1. In HACS, go to **Integrations** > **+** > **Custom repositories**
-2. Add this repository URL, category: **Integration**
-3. Install **WateringHub**
-4. Also install [WateringHub Card](https://github.com/odexvy/WateringHubCard) (category: **Plugin**)
+1. Open HACS in Home Assistant
+2. Go to **Integrations** > **Custom repositories**
+3. Add this repository URL, category **Integration**
+4. Install **WateringHub**
 5. Restart Home Assistant
 
 ### Manual
@@ -47,14 +51,38 @@ wateringhub:
 
 ## Entities
 
-| Entity | Type | Description |
-|--------|------|-------------|
-| `switch.wateringhub_<program_id>` | Switch | Toggle a program on/off (mutex) |
-| `sensor.wateringhub_status` | Sensor | `idle` / `running` / `error` |
-| `sensor.wateringhub_next_run` | Sensor | Next scheduled run datetime |
-| `sensor.wateringhub_last_run` | Sensor | Last completed run datetime |
+| Entity | Description |
+|--------|-------------|
+| `switch.wateringhub_{program_id}` | Toggle program on/off (attributes: schedule, zones, total_duration) |
+| `sensor.wateringhub_status` | Global status: `idle` / `running` / `error` |
+| `sensor.wateringhub_next_run` | Next scheduled run (ISO datetime) |
+| `sensor.wateringhub_last_run` | Last run (ISO datetime) |
 
 Switch entities are created/removed dynamically when programs are added/deleted.
+
+### Status sensor attributes
+
+The `sensor.wateringhub_status` sensor exposes additional attributes depending on its state:
+
+**Always available:**
+- `available_valves` — list of configured valves
+- `zones` — list of configured zones
+
+**When running:**
+- `current_program`, `current_zone`, `current_zone_name`
+- `current_valve`, `current_valve_name`, `current_valve_start`, `current_valve_duration`
+- `valves_done`, `valves_total`, `progress_percent`
+- `valves_sequence` — ordered list of all valves in the program with `status: done/running/pending`:
+  ```json
+  [
+    {"valve_id": "v1", "valve_name": "Lawn", "zone_id": "z1", "zone_name": "Garden", "duration": 600, "status": "done"},
+    {"valve_id": "v2", "valve_name": "Beds", "zone_id": "z1", "zone_name": "Garden", "duration": 900, "status": "running"},
+    {"valve_id": "v3", "valve_name": "Veggie", "zone_id": "z2", "zone_name": "Veggie patch", "duration": 1200, "status": "pending"}
+  ]
+  ```
+
+**When error:**
+- `current_program`, `error_message`
 
 ## Services
 
@@ -68,7 +96,7 @@ Switch entities are created/removed dynamically when programs are added/deleted.
 | `wateringhub.update_program` | Update a program |
 | `wateringhub.delete_program` | Delete a program and its switch entity |
 
-### Example: create a zone via service
+### Example: create a zone
 
 ```yaml
 service: wateringhub.create_zone
@@ -80,7 +108,7 @@ data:
     - valve_2
 ```
 
-### Example: create a program via service
+### Example: create a program
 
 ```yaml
 service: wateringhub.create_program
@@ -111,6 +139,16 @@ All events are fired on `wateringhub_event`:
 | `valve_opened` | `{ valve, duration }` |
 | `valve_closed` | `{ valve }` |
 
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .          # lint
+ruff format .         # format
+mypy custom_components/
+pytest tests/
+```
+
 ## License
 
-MIT - see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).

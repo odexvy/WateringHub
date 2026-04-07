@@ -54,6 +54,7 @@ class WateringHubCoordinator:
         self._current_valve_duration: int = 0
         self._valves_done: int = 0
         self._valves_total: int = 0
+        self._valves_sequence: list[dict] = []
         self._error_message: str | None = None
 
         # Callback for dynamic entity management
@@ -134,6 +135,7 @@ class WateringHubCoordinator:
                 "valves_done": None,
                 "valves_total": None,
                 "progress_percent": None,
+                "valves_sequence": None,
                 "error_message": self._error_message,
             }
 
@@ -149,12 +151,27 @@ class WateringHubCoordinator:
                 "valves_done": None,
                 "valves_total": None,
                 "progress_percent": None,
+                "valves_sequence": None,
                 "error_message": None,
             }
 
         total_seconds = self._valves_total * 60 if self._valves_total else 1
         done_seconds = self._valves_done * 60
         progress = int((done_seconds / total_seconds) * 100) if total_seconds else 0
+
+        sequence = [
+            {
+                **entry,
+                "status": (
+                    "done"
+                    if i < self._valves_done
+                    else "running"
+                    if i == self._valves_done
+                    else "pending"
+                ),
+            }
+            for i, entry in enumerate(self._valves_sequence)
+        ]
 
         return {
             "current_program": self._current_program,
@@ -169,6 +186,7 @@ class WateringHubCoordinator:
             "valves_done": self._valves_done,
             "valves_total": self._valves_total,
             "progress_percent": progress,
+            "valves_sequence": sequence,
             "error_message": None,
         }
 
@@ -516,6 +534,25 @@ class WateringHubCoordinator:
 
     # --- Executor ---
 
+    def _build_valves_sequence(self, program: dict) -> list[dict]:
+        """Build the ordered list of valves for a program execution."""
+        sequence = []
+        for zone_ref in program.get("zones", []):
+            zone = self._zones.get(zone_ref["zone_id"])
+            zone_name = zone["name"] if zone else zone_ref["zone_id"]
+            for valve_ref in zone_ref.get("valves", []):
+                valve = self._valves.get(valve_ref["valve_id"])
+                sequence.append(
+                    {
+                        "valve_id": valve_ref["valve_id"],
+                        "valve_name": valve["name"] if valve else valve_ref["valve_id"],
+                        "zone_id": zone_ref["zone_id"],
+                        "zone_name": zone_name,
+                        "duration": valve_ref["duration"] * 60,
+                    }
+                )
+        return sequence
+
     async def async_run_program(self, program_id: str) -> None:
         """Execute a program: run each zone's valves sequentially."""
         async with self._run_lock:
@@ -537,6 +574,7 @@ class WateringHubCoordinator:
             self._valves_total = sum(
                 len(zone_ref.get("valves", [])) for zone_ref in program["zones"]
             )
+            self._valves_sequence = self._build_valves_sequence(program)
             self._notify_listeners()
 
             self.hass.bus.async_fire(
@@ -621,6 +659,7 @@ class WateringHubCoordinator:
                 self._current_valve_duration = 0
                 self._valves_done = 0
                 self._valves_total = 0
+                self._valves_sequence = []
                 self._notify_listeners()
 
     async def _async_run_valve(self, valve: dict, duration_minutes: int) -> None:

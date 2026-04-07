@@ -9,7 +9,10 @@ Never attempt to commit, push, or create tags — ask the developer to do it.
 ## Project
 
 Custom Home Assistant component (HACS) for automated watering management.
-Domain: `wateringhub`. Repo: `WateringHub`.
+Domain: `wateringhub`.
+
+- **Backend** : https://github.com/odexvy/WateringHub
+- **Frontend** : https://github.com/odexvy/WateringHubCard
 
 ## Architecture
 
