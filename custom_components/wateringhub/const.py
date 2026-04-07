@@ -6,6 +6,6 @@ DOMAIN = "wateringhub"
 EVENT_TYPE = "wateringhub_event"
 PLATFORMS = ["switch", "sensor"]
 
-VALVE_PAUSE_SECONDS = 5
+VALVE_PAUSE_SECONDS = 1
 STORAGE_KEY = "wateringhub"
 STORAGE_VERSION = 1

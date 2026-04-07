@@ -18,23 +18,8 @@ from .coordinator import WateringHubCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-VALVE_SCHEMA = vol.Schema(
-    {
-        vol.Required("id"): cv.string,
-        vol.Required("name"): cv.string,
-        vol.Required("entity_id"): cv.string,
-        vol.Optional("flow_sensor"): cv.string,
-    }
-)
-
 CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required("valves"): vol.All(cv.ensure_list, [VALVE_SCHEMA]),
-            }
-        )
-    },
+    {DOMAIN: vol.Schema({})},
     extra=vol.ALLOW_EXTRA,
 )
 
@@ -90,9 +75,7 @@ PROGRAM_ZONE_SCHEMA = vol.Schema(
 )
 
 SCHEDULE_SCHEMA = vol.Schema(
-    {
-        vol.Required("time"): cv.string,
-    }
+    {vol.Required("time"): cv.string},
 )
 
 CREATE_PROGRAM_SCHEMA = vol.Schema(
@@ -121,17 +104,24 @@ DELETE_PROGRAM_SCHEMA = vol.Schema(
     }
 )
 
+SET_VALVE_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.string,
+        vol.Required("name"): cv.string,
+    }
+)
+
+SET_VALVES_SCHEMA = vol.Schema(
+    {
+        vol.Required("valves"): vol.All(cv.ensure_list, [SET_VALVE_SCHEMA]),
+    }
+)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up WateringHub from YAML configuration."""
-    if DOMAIN not in config:
-        return True
-
-    conf = config[DOMAIN]
-    valves = {v["id"]: v for v in conf["valves"]}
-
+    """Set up WateringHub."""
     try:
-        coordinator = WateringHubCoordinator(hass, valves)
+        coordinator = WateringHubCoordinator(hass)
         await coordinator.async_load()
         hass.data[DOMAIN] = coordinator
 
@@ -142,6 +132,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
         async def handle_stop_all(_call: ServiceCall) -> None:
             await coordinator.async_stop_all()
+
+        async def handle_set_valves(call: ServiceCall) -> None:
+            await coordinator.async_set_valves(call.data["valves"])
 
         async def handle_create_zone(call: ServiceCall) -> None:
             await coordinator.async_create_zone(
@@ -182,6 +175,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             await coordinator.async_delete_program(call.data["id"])
 
         hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
+        hass.services.async_register(
+            DOMAIN, "set_valves", handle_set_valves, schema=SET_VALVES_SCHEMA
+        )
         hass.services.async_register(
             DOMAIN, "create_zone", handle_create_zone, schema=CREATE_ZONE_SCHEMA
         )

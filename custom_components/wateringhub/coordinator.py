@@ -23,9 +23,9 @@ DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 class WateringHubCoordinator:
     """Central coordinator for WateringHub."""
 
-    def __init__(self, hass: HomeAssistant, valves: dict[str, dict]) -> None:
+    def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._valves: dict[str, dict] = valves
+        self._valves: dict[str, dict] = {}
         self._zones: dict[str, dict] = {}
         self._programs: dict[str, dict] = {}
         self._active_program: str | None = None
@@ -63,9 +63,10 @@ class WateringHubCoordinator:
     # --- Storage ---
 
     async def async_load(self) -> None:
-        """Load zones, programs, and active_program from .storage."""
+        """Load valves, zones, programs, and active_program from .storage."""
         data = await self._store.async_load()
         if data:
+            self._valves = {v["id"]: v for v in data.get("valves", [])}
             self._zones = {z["id"]: z for z in data.get("zones", [])}
             self._programs = {p["id"]: dict(p) for p in data.get("programs", [])}
             self._active_program = data.get("active_program")
@@ -73,7 +74,8 @@ class WateringHubCoordinator:
             for pid in self._programs:
                 self._programs[pid]["enabled"] = pid == self._active_program
             _LOGGER.info(
-                "Loaded %d zones, %d programs from storage",
+                "Loaded %d valves, %d zones, %d programs from storage",
+                len(self._valves),
                 len(self._zones),
                 len(self._programs),
             )
@@ -81,8 +83,9 @@ class WateringHubCoordinator:
             _LOGGER.info("No stored data found, starting fresh")
 
     async def _async_save(self) -> None:
-        """Persist zones, programs, and active_program to .storage."""
+        """Persist valves, zones, programs, and active_program to .storage."""
         data = {
+            "valves": list(self._valves.values()),
             "zones": list(self._zones.values()),
             "programs": list(self._programs.values()),
             "active_program": self._active_program,
@@ -208,6 +211,34 @@ class WateringHubCoordinator:
         """Set callbacks for dynamic entity add/remove."""
         self._add_entities_callback = add_callback
         self._remove_entity_callback = remove_callback
+
+    # --- Valves ---
+
+    async def async_set_valves(self, valves: list[dict]) -> None:
+        """Replace all valves. Match by entity_id to preserve existing IDs."""
+        existing_by_entity = {v["entity_id"]: v for v in self._valves.values()}
+
+        new_valves: dict[str, dict] = {}
+        for valve_data in valves:
+            entity_id = valve_data["entity_id"]
+            name = valve_data["name"]
+
+            if entity_id in existing_by_entity:
+                vid = existing_by_entity[entity_id]["id"]
+            else:
+                vid = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
+                base_vid = vid
+                counter = 2
+                while vid in new_valves:
+                    vid = f"{base_vid}_{counter}"
+                    counter += 1
+
+            new_valves[vid] = {"id": vid, "name": name, "entity_id": entity_id}
+
+        self._valves = new_valves
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Valves updated: %d valves configured", len(new_valves))
 
     # --- CRUD: Zones ---
 

@@ -1,3 +1,12 @@
+set_valves:
+  name: Set Valves
+  description: "Replace the entire valve list. Existing valves matched by entity_id keep their ID."
+  fields:
+    valves:
+      name: Valves
+      description: "List of valves with entity_id (HA switch entity) and name."
+      required: true
+
 stop_all:
   name: Stop All
   description: Close all valves immediately and cancel any running program.

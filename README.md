@@ -7,11 +7,11 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 | Repository | Role |
 |------------|------|
 | [WateringHub](https://github.com/odexvy/WateringHub) | Backend — this repo (HA custom integration) |
-| [WateringHubCard](https://github.com/odexvy/WateringHubCard) | Frontend — HA custom card |
+| [WateringHubCard](https://github.com/odexvy/WateringHubCard) | Frontend — HA custom cards -> config and display|
 
 ## Features
 
-- Configure physical valves (HA switch entities) in YAML
+- Configure valves via `set_valves` service or YAML fallback (no restart needed)
 - Create zones and programs dynamically via services (no restart needed)
 - Per-program valve durations with per-valve frequency (every N days, specific weekdays)
 - Program schedule = trigger time only, frequency is per valve
@@ -36,19 +36,27 @@ Copy `custom_components/wateringhub/` into your HA `custom_components/` director
 
 ## Configuration
 
-Only valves are defined in `configuration.yaml` (your physical devices). Zones and programs are managed dynamically via the card or HA services.
+Valves, zones and programs are all managed via services (from the config card or HA developer tools). No YAML configuration required.
+
+Add `wateringhub:` to your `configuration.yaml` to enable the integration:
 
 ```yaml
 wateringhub:
-  valves:
-    - id: valve_1
-      name: My First Valve
-      entity_id: switch.your_valve_1
-      flow_sensor: sensor.your_valve_1_flow  # optional
-    - id: valve_2
-      name: My Second Valve
-      entity_id: switch.your_valve_2
 ```
+
+Then configure valves via the `set_valves` service:
+
+```yaml
+service: wateringhub.set_valves
+data:
+  valves:
+    - entity_id: switch.relay_1
+      name: Lawn
+    - entity_id: switch.relay_2
+      name: Flower beds
+```
+
+YAML valve config is still supported as fallback (used until `set_valves` is called).
 
 ## Entities
 
@@ -101,6 +109,7 @@ The program triggers every day at its scheduled time. Valves whose frequency doe
 
 | Service | Description |
 |---------|-------------|
+| `wateringhub.set_valves` | Replace the entire valve list (entity_id + name per valve) |
 | `wateringhub.stop_all` | Close all valves immediately, cancel running program |
 | `wateringhub.create_zone` | Create a zone (id, name, valve list) |
 | `wateringhub.update_zone` | Update a zone |

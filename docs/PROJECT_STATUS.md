@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-07
-**Version :** 0.0.15
+**Version :** 0.0.16
 **Branche :** master
 
 ---
@@ -9,10 +9,9 @@
 ## Architecture
 
 ```
-configuration.yaml          .storage/wateringhub
-   (valves YAML)            (zones + programs JSON)
-        |                          |
-        v                          v
+.storage/wateringhub (valves + zones + programs JSON)
+        |
+        v
    __init__.py ---- config validation + service registration
         |
         v
@@ -23,7 +22,7 @@ configuration.yaml          .storage/wateringhub
 ```
 
 **Principes :**
-- **Valves** = config YAML uniquement (hardware physique)
+- **Valves** = via service `set_valves`, persistance `.storage` (YAML en fallback)
 - **Zones + Programs** = CRUD dynamique via services HA, persistance `.storage`
 - **Coordinator** = cerveau central (mutex, scheduler, executor)
 - **Entities** = switches dynamiques + 3 sensors, listener-driven (pas de polling)
@@ -44,10 +43,11 @@ configuration.yaml          .storage/wateringhub
 
 ---
 
-## Services (7/7)
+## Services (8/8)
 
 | Service                      | Params                             | Description                                              |
 | ---------------------------- | ---------------------------------- | -------------------------------------------------------- |
+| `wateringhub.set_valves`     | `{ valves: [{ entity_id, name }] }` | Remplacer la liste complète des vannes                   |
 | `wateringhub.stop_all`       | `{}`                               | Arrêt immédiat, fermeture de toutes les vannes           |
 | `wateringhub.create_zone`    | `{ id, name, valves }`             | Créer une zone (groupement de vannes)                    |
 | `wateringhub.update_zone`    | `{ id, name?, valves? }`           | Modifier une zone                                        |
@@ -84,7 +84,7 @@ Chaque vanne a sa propre fréquence. Sans `frequency`, la vanne tourne à chaque
 - **Séquentiel** — vannes exécutées une par une, zone par zone
 - **Tracking temps réel** — vanne courante, progression, timer, `valves_sequence` (liste ordonnée done/running/pending)
 - **Annulation** — cancel event vérifié chaque seconde
-- **Pause** — 5 secondes entre chaque vanne
+- **Pause** — 1 seconde entre chaque vanne
 - **Error handling** — persistent notification HA + fermeture auto de toutes les vannes
 - **Dry run** — mode simulation : séquence complète sans commander les vannes physiques
 - **Fréquence par vanne** — override optionnel de la fréquence du programme par vanne (every_n_days, weekdays), vannes non éligibles skippées
@@ -110,8 +110,8 @@ Tous les events sont émis sur `wateringhub_event` :
 ```
 WateringHub/
 ├── custom_components/wateringhub/
-│   ├── __init__.py      (214 lignes)  Setup, validation YAML, service registration
-│   ├── coordinator.py   (763 lignes)  Storage, CRUD, mutex, scheduling, execution
+│   ├── __init__.py      (228 lignes)  Setup, validation, service registration
+│   ├── coordinator.py   (798 lignes)  Storage, CRUD, mutex, scheduling, execution
 │   ├── sensor.py        (108 lignes)  Status, next_run, last_run sensors
 │   ├── switch.py         (99 lignes)  Dynamic program switches
 │   ├── const.py          (11 lignes)  Constants (DOMAIN, EVENT_TYPE, PLATFORMS)
@@ -133,7 +133,7 @@ WateringHub/
 └── LICENSE
 ```
 
-**Total** : ~1 190 lignes production, ~400 lignes tests
+**Total** : ~1 240 lignes production, ~400 lignes tests
 
 ---
 
@@ -192,13 +192,13 @@ WateringHub/
 
 ## Décisions prises
 
-1. **YAML-only valves** — les vannes restent en `configuration.yaml`, pas de CRUD dynamique (hardware = config)
+1. **Valves via service** — les vannes sont gérées via `set_valves`, persistées dans `.storage`. YAML en fallback uniquement
 2. **Zones + programmes dynamiques** — CRUD via services HA, persistance `.storage/wateringhub`
 3. **Mutex strict** — 1 seul programme actif, le switch d'un programme désactive les autres
 4. **Listener-driven** — pas de polling, les entities s'abonnent au coordinator
 5. **Switches dynamiques** — 1 switch par programme, créé/supprimé sans restart HA
 6. **Durées par programme** — les zones sont des groupements logiques, les durées sont par vanne par programme
-7. **Pause inter-vannes** — 5 secondes entre chaque vanne (constante `VALVE_PAUSE_SECONDS`)
+7. **Pause inter-vannes** — 1 seconde entre chaque vanne (constante `VALVE_PAUSE_SECONDS`)
 8. **Cancel event** — vérification chaque seconde pour annulation réactive
 9. **Error → auto stop** — en cas d'erreur, fermeture auto de toutes les vannes + persistent notification
 10. **Sensors globaux** — status/next_run/last_run sont globaux (pas par programme)
@@ -207,6 +207,8 @@ WateringHub/
 13. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques, exposé sur switch et sensor status
 14. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement (`{ time: "22:00" }`), il se déclenche tous les jours. La fréquence est gérée par vanne, pas par programme (breaking change v0.0.14)
 15. **Fréquence par vanne** — `frequency` optionnel sur chaque vanne, types `every_n_days` (n min 2, start_date) et `weekdays` (days). Sans frequency = tourne à chaque déclenchement. Vannes non éligibles exclues de `valves_sequence`. Si aucune vanne éligible, le programme ne démarre pas
+16. **`set_valves` service** — remplace la liste complète des vannes, match par `entity_id` pour préserver les IDs existants, persiste dans `.storage`. YAML optionnel en fallback
+17. **Pause inter-vannes réduite** — passée de 5s à 1s
 
 ---
 
