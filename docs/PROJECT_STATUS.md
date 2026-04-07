@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-07
-**Version :** 0.0.19
+**Version :** 0.0.20
 **Branche :** master
 
 ---
