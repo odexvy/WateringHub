@@ -44,7 +44,7 @@ def sample_programs():
             "id": "prog_a",
             "name": "Program A",
             "enabled": True,
-            "schedule": {"type": "daily", "time": "22:00"},
+            "schedule": {"time": "22:00"},
             "zones": [
                 {
                     "zone_id": "zone_1",
@@ -59,12 +59,7 @@ def sample_programs():
             "id": "prog_b",
             "name": "Program B",
             "enabled": False,
-            "schedule": {
-                "type": "every_n_days",
-                "n": 2,
-                "start_date": "2026-01-01",
-                "time": "08:00",
-            },
+            "schedule": {"time": "08:00"},
             "zones": [
                 {
                     "zone_id": "zone_1",

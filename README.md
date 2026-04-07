@@ -1,47 +1,50 @@
 # WateringHub
 
-<img src="https://raw.githubusercontent.com/odexvy/WateringHub/master/images/icon.png" alt="WateringHub" width="128">
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
+[![GitHub Release](https://img.shields.io/github/v/release/odexvy/WateringHub)](https://github.com/odexvy/WateringHub/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Custom [Home Assistant](https://www.home-assistant.io/) integration for automated watering management.
-
-> **Requires [WateringHub Card](https://github.com/odexvy/WateringHubCard)** for the dashboard UI. Install it via HACS (Frontend > Plugin).
 
 | Repository | Role |
 |------------|------|
 | [WateringHub](https://github.com/odexvy/WateringHub) | Backend — this repo (HA custom integration) |
-| [WateringHubCard](https://github.com/odexvy/WateringHubCard) | Frontend — HA custom cards -> config and display|
+| [WateringHubCard](https://github.com/odexvy/WateringHubCard) | Frontend — HA custom cards (config + display) |
+
+## Introduction
+
+WateringHub lets you manage your irrigation system entirely from the Home Assistant UI. Configure your valves (any HA switch entity), group them into zones, create watering programs with per-valve schedules, and monitor execution in real time. Everything is stored in HA's `.storage` — no YAML needed.
+
+Works with any switch entity: GPIO relays, Zigbee, ESPHome, Shelly, etc.
 
 ## Features
 
-- Configure valves via `set_valves` service (no YAML, no restart needed)
-- Create zones and programs dynamically via services (no restart needed)
-- Per-program valve durations with per-valve frequency (every N days, specific weekdays)
-- Program schedule = trigger time only, frequency is per valve
-- Strict mutex: only one program active at a time
-- Sequential valve execution with real-time progress tracking
-- Valve sequence with status (`done` / `running` / `pending`) exposed on status sensor
-- Dry run mode: simulate full execution without commanding physical valves
-- State persisted across restarts (`.storage/wateringhub`)
-- Error handling with persistent HA notifications
+- **No YAML** — setup via UI, valves/zones/programs via services
+- **Per-valve frequency** — each valve runs daily, every N days, or on specific weekdays
+- **Real-time tracking** — progress bars, valve sequence with done/running/pending status
+- **Dry run mode** — simulate full execution without commanding physical valves
+- **Strict mutex** — only one program active at a time
+- **Persistent state** — survives HA restarts
+- **Error handling** — auto-stop + persistent notification on failure
 
-## Installation (HACS)
+## Installation
+
+### HACS (recommended)
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** > **Custom repositories**
-3. Add this repository URL, category **Integration**
+3. Add `https://github.com/odexvy/WateringHub`, category **Integration**
 4. Install **WateringHub**
 5. Restart Home Assistant
 6. Go to **Settings** > **Devices & Services** > **Add Integration** > **WateringHub**
 
 ### Manual
 
-Copy `custom_components/wateringhub/` into your HA `custom_components/` directory, then add the integration via the UI.
+Copy `custom_components/wateringhub/` into your HA `custom_components/` directory, restart, then add the integration via the UI.
 
-## Configuration
+## Getting started
 
-No YAML required. Everything is managed via services (from the config card or HA developer tools).
-
-After adding the integration, configure valves via the `set_valves` service:
+After adding the integration, configure your valves:
 
 ```yaml
 service: wateringhub.set_valves
@@ -52,6 +55,8 @@ data:
     - entity_id: switch.relay_2
       name: Flower beds
 ```
+
+Then create zones and programs from the [WateringHub Card](https://github.com/odexvy/WateringHubCard) or via services.
 
 ## Entities
 
@@ -77,28 +82,21 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 - `current_valve`, `current_valve_name`, `current_valve_start`, `current_valve_duration`
 - `valves_done`, `valves_total`, `progress_percent`
 - `dry_run` — `true` if the running program is in dry run mode
-- `valves_sequence` — ordered list of **today's eligible valves** with `status: done/running/pending` (valves whose frequency doesn't match today are excluded):
-  ```json
-  [
-    {"valve_id": "v1", "valve_name": "Lawn", "zone_id": "z1", "zone_name": "Garden", "duration": 600, "status": "done"},
-    {"valve_id": "v2", "valve_name": "Beds", "zone_id": "z1", "zone_name": "Garden", "duration": 900, "status": "running"},
-    {"valve_id": "v3", "valve_name": "Veggie", "zone_id": "z2", "zone_name": "Veggie patch", "duration": 1200, "status": "pending"}
-  ]
-  ```
+- `valves_sequence` — ordered list of today's eligible valves with `status: done/running/pending`
 
 **When error:**
 - `current_program`, `error_message`
 
 ### Per-valve frequency
 
-Each valve in a program can have its own frequency. Without `frequency`, the valve runs at every trigger (daily). With `frequency`, it only runs on matching days.
+Each valve in a program can have its own frequency. Without `frequency`, the valve runs at every trigger (daily).
 
 | Frequency type | Fields | Description |
 |----------------|--------|-------------|
 | `every_n_days` | `n` (min 2), `start_date` (ISO, optional) | Every N days from start_date |
 | `weekdays` | `days` (mon, tue, ..., sun) | Specific days of the week |
 
-The program triggers every day at its scheduled time. Valves whose frequency doesn't match today are skipped. If no valve is eligible, the program does not start (stays `idle`).
+The program triggers every day at its scheduled time. Valves whose frequency doesn't match today are skipped. If no valve is eligible, the program does not start.
 
 ## Services
 
@@ -113,7 +111,8 @@ The program triggers every day at its scheduled time. Valves whose frequency doe
 | `wateringhub.update_program` | Update a program (name, schedule, zones, dry_run) |
 | `wateringhub.delete_program` | Delete a program and its switch entity |
 
-### Example: create a zone
+<details>
+<summary>Example: create a zone</summary>
 
 ```yaml
 service: wateringhub.create_zone
@@ -124,15 +123,17 @@ data:
     - valve_1
     - valve_2
 ```
+</details>
 
-### Example: create a program
+<details>
+<summary>Example: create a program</summary>
 
 ```yaml
 service: wateringhub.create_program
 data:
   id: prog_quotidien
   name: Arrosage quotidien
-  dry_run: false  # optional, simulate without commanding valves
+  dry_run: false
   schedule:
     time: "22:00"
   zones:
@@ -142,11 +143,12 @@ data:
           duration: 15
         - valve_id: valve_2
           duration: 20
-          frequency:  # optional, override schedule frequency for this valve
+          frequency:
             type: every_n_days
             n: 2
             start_date: "2026-04-07"
 ```
+</details>
 
 ## Events
 

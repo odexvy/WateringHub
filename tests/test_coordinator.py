@@ -29,7 +29,8 @@ def mock_hass():
 @pytest.fixture
 def coordinator(mock_hass, sample_valves, sample_zones, sample_programs):
     """Create a coordinator with sample data."""
-    coord = WateringHubCoordinator(mock_hass, sample_valves)
+    coord = WateringHubCoordinator(mock_hass)
+    coord._valves = sample_valves
     # Manually load zones and programs (bypassing storage)
     coord._zones = {z["id"]: z for z in sample_zones}
     coord._programs = {p["id"]: dict(p) for p in sample_programs}
@@ -97,30 +98,32 @@ class TestMutex:
         coordinator._store.async_save.assert_called()
 
 
-class TestScheduling:
-    """Test schedule evaluation."""
+class TestFrequency:
+    """Test per-valve frequency evaluation."""
 
-    def test_should_run_daily(self, coordinator):
+    def test_no_frequency_always_runs(self):
         now = datetime(2026, 3, 29, 22, 0)
-        program = coordinator.programs["prog_a"]
-        assert coordinator._should_run_today(program, now) is True
+        assert WateringHubCoordinator._check_frequency({}, now) is True
 
-    def test_should_run_every_n_days_match(self, coordinator):
-        now = datetime(2026, 1, 3, 8, 0)
-        program = coordinator.programs["prog_b"]
-        assert coordinator._should_run_today(program, now) is True
+    def test_every_n_days_match(self):
+        freq = {"type": "every_n_days", "n": 2, "start_date": "2026-01-01"}
+        now = datetime(2026, 1, 3, 8, 0)  # day 2 from start, 2%2=0
+        assert WateringHubCoordinator._check_frequency(freq, now) is True
 
-    def test_should_run_every_n_days_no_match(self, coordinator):
-        now = datetime(2026, 1, 2, 8, 0)
-        program = coordinator.programs["prog_b"]
-        assert coordinator._should_run_today(program, now) is False
+    def test_every_n_days_no_match(self):
+        freq = {"type": "every_n_days", "n": 2, "start_date": "2026-01-01"}
+        now = datetime(2026, 1, 2, 8, 0)  # day 1 from start, 1%2=1
+        assert WateringHubCoordinator._check_frequency(freq, now) is False
 
-    def test_should_run_weekdays(self, coordinator):
-        program = {"schedule": {"type": "weekdays", "days": ["mon", "fri"]}}
+    def test_weekdays_match(self):
+        freq = {"type": "weekdays", "days": ["mon", "fri"]}
         now = datetime(2026, 3, 30, 22, 0)  # Monday
-        assert coordinator._should_run_today(program, now) is True
+        assert WateringHubCoordinator._check_frequency(freq, now) is True
+
+    def test_weekdays_no_match(self):
+        freq = {"type": "weekdays", "days": ["mon", "fri"]}
         now = datetime(2026, 3, 31, 22, 0)  # Tuesday
-        assert coordinator._should_run_today(program, now) is False
+        assert WateringHubCoordinator._check_frequency(freq, now) is False
 
     def test_day_map_completeness(self):
         assert len(DAY_MAP) == 7
