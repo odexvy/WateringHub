@@ -95,6 +95,7 @@ CREATE_PROGRAM_SCHEMA = vol.Schema(
         vol.Required("name"): cv.string,
         vol.Required("schedule"): SCHEDULE_SCHEMA,
         vol.Required("zones"): vol.All(cv.ensure_list, [PROGRAM_ZONE_SCHEMA]),
+        vol.Optional("dry_run", default=False): cv.boolean,
     }
 )
 
@@ -104,6 +105,7 @@ UPDATE_PROGRAM_SCHEMA = vol.Schema(
         vol.Optional("name"): cv.string,
         vol.Optional("schedule"): SCHEDULE_SCHEMA,
         vol.Optional("zones"): vol.All(cv.ensure_list, [PROGRAM_ZONE_SCHEMA]),
+        vol.Optional("dry_run"): cv.boolean,
     }
 )
 
@@ -158,6 +160,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 call.data["name"],
                 call.data["schedule"],
                 call.data["zones"],
+                dry_run=call.data.get("dry_run", False),
             )
 
         async def handle_update_program(call: ServiceCall) -> None:
@@ -166,6 +169,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 name=call.data.get("name"),
                 schedule=call.data.get("schedule"),
                 zones=call.data.get("zones"),
+                dry_run=call.data.get("dry_run"),
             )
 
         async def handle_delete_program(call: ServiceCall) -> None:

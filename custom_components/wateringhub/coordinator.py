@@ -55,6 +55,7 @@ class WateringHubCoordinator:
         self._valves_done: int = 0
         self._valves_total: int = 0
         self._valves_sequence: list[dict] = []
+        self._dry_run: bool = False
         self._error_message: str | None = None
 
         # Callback for dynamic entity management
@@ -136,6 +137,7 @@ class WateringHubCoordinator:
                 "valves_total": None,
                 "progress_percent": None,
                 "valves_sequence": None,
+                "dry_run": None,
                 "error_message": self._error_message,
             }
 
@@ -152,6 +154,7 @@ class WateringHubCoordinator:
                 "valves_total": None,
                 "progress_percent": None,
                 "valves_sequence": None,
+                "dry_run": None,
                 "error_message": None,
             }
 
@@ -187,6 +190,7 @@ class WateringHubCoordinator:
             "valves_total": self._valves_total,
             "progress_percent": progress,
             "valves_sequence": sequence,
+            "dry_run": self._dry_run,
             "error_message": None,
         }
 
@@ -271,7 +275,13 @@ class WateringHubCoordinator:
                     raise ValueError(f"Valve '{vid}' is not in zone '{zone_id}'")
 
     async def async_create_program(
-        self, program_id: str, name: str, schedule: dict, zones: list[dict]
+        self,
+        program_id: str,
+        name: str,
+        schedule: dict,
+        zones: list[dict],
+        *,
+        dry_run: bool = False,
     ) -> None:
         """Create a new program."""
         if program_id in self._programs:
@@ -281,6 +291,7 @@ class WateringHubCoordinator:
             "id": program_id,
             "name": name,
             "enabled": False,
+            "dry_run": dry_run,
             "schedule": schedule,
             "zones": zones,
         }
@@ -298,6 +309,7 @@ class WateringHubCoordinator:
         name: str | None = None,
         schedule: dict | None = None,
         zones: list[dict] | None = None,
+        dry_run: bool | None = None,
     ) -> None:
         """Update an existing program."""
         if program_id not in self._programs:
@@ -310,6 +322,8 @@ class WateringHubCoordinator:
         if zones is not None:
             self._validate_program_references(zones)
             prog["zones"] = zones
+        if dry_run is not None:
+            prog["dry_run"] = dry_run
         await self._async_save()
         self._recalculate_next_run()
         self._notify_listeners()
@@ -371,6 +385,7 @@ class WateringHubCoordinator:
             "schedule": program.get("schedule", {}),
             "zones": zones,
             "total_duration": total_duration,
+            "dry_run": program.get("dry_run", False),
         }
 
     # --- Mutex ---
@@ -409,25 +424,30 @@ class WateringHubCoordinator:
     async def async_stop_all(self) -> None:
         """Stop any running program and close all valves."""
         self._cancel_event.set()
+        dry_run = self._dry_run
         self._running_program = None
 
         # Only reset to idle if not in error state
         if self._status != "error":
             self._status = "idle"
 
-        for valve in self._valves.values():
-            try:
-                await self.hass.services.async_call(
-                    "switch",
-                    "turn_off",
-                    {"entity_id": valve["entity_id"]},
-                    blocking=True,
-                )
-            except Exception:
-                _LOGGER.exception("Failed to close valve '%s'", valve["id"])
+        if not dry_run:
+            for valve in self._valves.values():
+                try:
+                    await self.hass.services.async_call(
+                        "switch",
+                        "turn_off",
+                        {"entity_id": valve["entity_id"]},
+                        blocking=True,
+                    )
+                except Exception:
+                    _LOGGER.exception("Failed to close valve '%s'", valve["id"])
 
         self._notify_listeners()
-        _LOGGER.info("All valves closed, execution stopped")
+        _LOGGER.info(
+            "%s execution stopped",
+            "[DRY RUN]" if dry_run else "All valves closed,",
+        )
 
     # --- Scheduling ---
 
@@ -568,6 +588,7 @@ class WateringHubCoordinator:
             self._cancel_event.clear()
             self._running_program = program_id
             self._current_program = program_id
+            self._dry_run = program.get("dry_run", False)
             self._error_message = None
             self._status = "running"
             self._valves_done = 0
@@ -660,6 +681,7 @@ class WateringHubCoordinator:
                 self._valves_done = 0
                 self._valves_total = 0
                 self._valves_sequence = []
+                self._dry_run = False
                 self._notify_listeners()
 
     async def _async_run_valve(self, valve: dict, duration_minutes: int) -> None:
@@ -667,6 +689,7 @@ class WateringHubCoordinator:
         entity_id = valve["entity_id"]
         valve_id = valve["id"]
         duration_seconds = duration_minutes * 60
+        dry_run = self._dry_run
 
         self._current_valve = valve_id
         self._current_valve_name = valve["name"]
@@ -674,7 +697,12 @@ class WateringHubCoordinator:
         self._current_valve_start = dt_util.now()
         self._notify_listeners()
 
-        _LOGGER.info("Opening valve '%s' for %d min", valve_id, duration_minutes)
+        _LOGGER.info(
+            "%s valve '%s' for %d min",
+            "[DRY RUN] Simulating" if dry_run else "Opening",
+            valve_id,
+            duration_minutes,
+        )
 
         self.hass.bus.async_fire(
             EVENT_TYPE,
@@ -682,15 +710,17 @@ class WateringHubCoordinator:
                 "action": "valve_opened",
                 "valve": valve_id,
                 "duration": duration_seconds,
+                "dry_run": dry_run,
             },
         )
 
-        await self.hass.services.async_call(
-            "switch",
-            "turn_on",
-            {"entity_id": entity_id},
-            blocking=True,
-        )
+        if not dry_run:
+            await self.hass.services.async_call(
+                "switch",
+                "turn_on",
+                {"entity_id": entity_id},
+                blocking=True,
+            )
 
         # Wait for duration, checking cancel every second
         for _ in range(duration_seconds):
@@ -698,19 +728,24 @@ class WateringHubCoordinator:
                 break
             await asyncio.sleep(1)
 
-        await self.hass.services.async_call(
-            "switch",
-            "turn_off",
-            {"entity_id": entity_id},
-            blocking=True,
-        )
+        if not dry_run:
+            await self.hass.services.async_call(
+                "switch",
+                "turn_off",
+                {"entity_id": entity_id},
+                blocking=True,
+            )
 
         self.hass.bus.async_fire(
             EVENT_TYPE,
-            {"action": "valve_closed", "valve": valve_id},
+            {"action": "valve_closed", "valve": valve_id, "dry_run": dry_run},
         )
 
-        _LOGGER.info("Valve '%s' closed", valve_id)
+        _LOGGER.info(
+            "%s valve '%s'",
+            "[DRY RUN] Simulated close" if dry_run else "Closed",
+            valve_id,
+        )
 
         # Pause between valves
         if not self._cancel_event.is_set():

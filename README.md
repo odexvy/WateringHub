@@ -18,6 +18,7 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 - Strict mutex: only one program active at a time
 - Sequential valve execution with real-time progress tracking
 - Valve sequence with status (`done` / `running` / `pending`) exposed on status sensor
+- Dry run mode: simulate full execution without commanding physical valves
 - State persisted across restarts (`.storage/wateringhub`)
 - Error handling with persistent HA notifications
 
@@ -53,7 +54,7 @@ wateringhub:
 
 | Entity | Description |
 |--------|-------------|
-| `switch.wateringhub_{program_id}` | Toggle program on/off (attributes: schedule, zones, total_duration) |
+| `switch.wateringhub_{program_id}` | Toggle program on/off (attributes: schedule, zones, total_duration, dry_run) |
 | `sensor.wateringhub_status` | Global status: `idle` / `running` / `error` |
 | `sensor.wateringhub_next_run` | Next scheduled run (ISO datetime) |
 | `sensor.wateringhub_last_run` | Last run (ISO datetime) |
@@ -72,6 +73,7 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 - `current_program`, `current_zone`, `current_zone_name`
 - `current_valve`, `current_valve_name`, `current_valve_start`, `current_valve_duration`
 - `valves_done`, `valves_total`, `progress_percent`
+- `dry_run` — `true` if the running program is in dry run mode
 - `valves_sequence` — ordered list of all valves in the program with `status: done/running/pending`:
   ```json
   [
@@ -92,8 +94,8 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 | `wateringhub.create_zone` | Create a zone (id, name, valve list) |
 | `wateringhub.update_zone` | Update a zone |
 | `wateringhub.delete_zone` | Delete a zone (fails if used by a program) |
-| `wateringhub.create_program` | Create a program (id, name, schedule, zones with durations) |
-| `wateringhub.update_program` | Update a program |
+| `wateringhub.create_program` | Create a program (id, name, schedule, zones with durations, dry_run) |
+| `wateringhub.update_program` | Update a program (name, schedule, zones, dry_run) |
 | `wateringhub.delete_program` | Delete a program and its switch entity |
 
 ### Example: create a zone
@@ -115,6 +117,7 @@ service: wateringhub.create_program
 data:
   id: prog_quotidien
   name: Arrosage quotidien
+  dry_run: false  # optional, simulate without commanding valves
   schedule:
     type: daily
     time: "22:00"
@@ -136,8 +139,8 @@ All events are fired on `wateringhub_event`:
 | `program_started` | `{ program }` |
 | `program_finished` | `{ program }` |
 | `program_error` | `{ program, error }` |
-| `valve_opened` | `{ valve, duration }` |
-| `valve_closed` | `{ valve }` |
+| `valve_opened` | `{ valve, duration, dry_run }` |
+| `valve_closed` | `{ valve, dry_run }` |
 
 ## Development
 

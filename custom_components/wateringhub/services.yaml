@@ -82,6 +82,11 @@ create_program:
       name: Zones
       description: "List of zone references with valve durations."
       required: true
+    dry_run:
+      name: Dry Run
+      description: "Simulate execution without opening physical valves (default: false)."
+      selector:
+        boolean:
 
 update_program:
   name: Update Program
@@ -104,6 +109,11 @@ update_program:
     zones:
       name: Zones
       description: New zone references with valve durations.
+    dry_run:
+      name: Dry Run
+      description: "Simulate execution without opening physical valves."
+      selector:
+        boolean:
 
 delete_program:
   name: Delete Program
