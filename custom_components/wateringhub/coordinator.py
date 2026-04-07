@@ -364,13 +364,14 @@ class WateringHubCoordinator:
                 valve = self._valves.get(valve_ref["valve_id"])
                 if not valve:
                     continue
-                valves.append(
-                    {
-                        "valve_id": valve_ref["valve_id"],
-                        "valve_name": valve["name"],
-                        "duration": valve_ref["duration"],
-                    }
-                )
+                valve_detail: dict = {
+                    "valve_id": valve_ref["valve_id"],
+                    "valve_name": valve["name"],
+                    "duration": valve_ref["duration"],
+                }
+                if "frequency" in valve_ref:
+                    valve_detail["frequency"] = valve_ref["frequency"]
+                valves.append(valve_detail)
                 total_duration += valve_ref["duration"]
             zones.append(
                 {
@@ -507,7 +508,15 @@ class WateringHubCoordinator:
     def _should_run_today(self, program: dict, now) -> bool:
         """Check if a program should run today based on schedule type."""
         schedule = program["schedule"]
-        schedule_type = schedule["type"]
+        return self._check_frequency(schedule, now)
+
+    @staticmethod
+    def _check_frequency(schedule: dict, now) -> bool:
+        """Check if a schedule/frequency dict matches today.
+
+        Works for both program-level schedules and per-valve frequency overrides.
+        """
+        schedule_type = schedule.get("type", "daily")
 
         if schedule_type == "daily":
             return True
@@ -554,13 +563,20 @@ class WateringHubCoordinator:
 
     # --- Executor ---
 
-    def _build_valves_sequence(self, program: dict) -> list[dict]:
-        """Build the ordered list of valves for a program execution."""
+    def _build_valves_sequence(self, program: dict, now) -> list[dict]:
+        """Build the ordered list of eligible valves for today's execution."""
         sequence = []
         for zone_ref in program.get("zones", []):
             zone = self._zones.get(zone_ref["zone_id"])
             zone_name = zone["name"] if zone else zone_ref["zone_id"]
             for valve_ref in zone_ref.get("valves", []):
+                frequency = valve_ref.get("frequency")
+                if frequency and not self._check_frequency(frequency, now):
+                    _LOGGER.debug(
+                        "Valve '%s' skipped (frequency not matched today)",
+                        valve_ref["valve_id"],
+                    )
+                    continue
                 valve = self._valves.get(valve_ref["valve_id"])
                 sequence.append(
                     {
@@ -586,22 +602,34 @@ class WateringHubCoordinator:
                 return
 
             self._cancel_event.clear()
-            self._running_program = program_id
-            self._current_program = program_id
             self._dry_run = program.get("dry_run", False)
             self._error_message = None
+
+            now = dt_util.now()
+            sequence = self._build_valves_sequence(program, now)
+
+            if not sequence:
+                _LOGGER.info(
+                    "Program '%s' triggered but no valves eligible today, skipping",
+                    program_id,
+                )
+                return
+
+            self._running_program = program_id
+            self._current_program = program_id
             self._status = "running"
             self._valves_done = 0
-            self._valves_total = sum(
-                len(zone_ref.get("valves", [])) for zone_ref in program["zones"]
-            )
-            self._valves_sequence = self._build_valves_sequence(program)
+            self._valves_total = len(sequence)
+            self._valves_sequence = sequence
             self._notify_listeners()
 
             self.hass.bus.async_fire(
                 EVENT_TYPE,
                 {"action": "program_started", "program": program_id},
             )
+
+            # Build a set of eligible valve IDs for fast lookup
+            eligible_valve_ids = {entry["valve_id"] for entry in sequence}
 
             try:
                 for zone_ref in program["zones"]:
@@ -614,6 +642,9 @@ class WateringHubCoordinator:
                     self._current_zone_name = zone["name"]
 
                     for valve_ref in zone_ref.get("valves", []):
+                        if valve_ref["valve_id"] not in eligible_valve_ids:
+                            continue
+
                         if self._cancel_event.is_set():
                             _LOGGER.info("Execution cancelled")
                             return

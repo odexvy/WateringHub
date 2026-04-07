@@ -15,6 +15,7 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 - Create zones and programs dynamically via services (no restart needed)
 - Flexible schedules: daily, every N days, specific weekdays
 - Per-program valve durations
+- Per-valve frequency override: run specific valves every N days or on specific weekdays
 - Strict mutex: only one program active at a time
 - Sequential valve execution with real-time progress tracking
 - Valve sequence with status (`done` / `running` / `pending`) exposed on status sensor
@@ -74,7 +75,7 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 - `current_valve`, `current_valve_name`, `current_valve_start`, `current_valve_duration`
 - `valves_done`, `valves_total`, `progress_percent`
 - `dry_run` — `true` if the running program is in dry run mode
-- `valves_sequence` — ordered list of all valves in the program with `status: done/running/pending`:
+- `valves_sequence` — ordered list of **today's eligible valves** with `status: done/running/pending` (valves whose frequency doesn't match today are excluded):
   ```json
   [
     {"valve_id": "v1", "valve_name": "Lawn", "zone_id": "z1", "zone_name": "Garden", "duration": 600, "status": "done"},
@@ -85,6 +86,17 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 
 **When error:**
 - `current_program`, `error_message`
+
+### Per-valve frequency override
+
+Each valve in a program can optionally override the program's schedule frequency. Valves without `frequency` run at every trigger. Valves with `frequency` only run on matching days.
+
+| Frequency type | Fields | Description |
+|----------------|--------|-------------|
+| `every_n_days` | `n` (min 2), `start_date` (ISO, optional) | Every N days from start_date |
+| `weekdays` | `days` (mon, tue, ..., sun) | Specific days of the week |
+
+If no valve is eligible on a given day, the program does not start (stays `idle`).
 
 ## Services
 
@@ -128,6 +140,10 @@ data:
           duration: 15
         - valve_id: valve_2
           duration: 20
+          frequency:  # optional, override schedule frequency for this valve
+            type: every_n_days
+            n: 2
+            start_date: "2026-04-07"
 ```
 
 ## Events

@@ -80,7 +80,7 @@ create_program:
       required: true
     zones:
       name: Zones
-      description: "List of zone references with valve durations."
+      description: "List of zone references with valve durations. Each valve supports an optional frequency override: { type: every_n_days, n: 2, start_date: '2026-01-01' } or { type: weekdays, days: [mon, wed, fri] }."
       required: true
     dry_run:
       name: Dry Run
@@ -108,7 +108,7 @@ update_program:
       description: New schedule object.
     zones:
       name: Zones
-      description: New zone references with valve durations.
+      description: "New zone references with valve durations. Each valve supports an optional frequency override."
     dry_run:
       name: Dry Run
       description: "Simulate execution without opening physical valves."

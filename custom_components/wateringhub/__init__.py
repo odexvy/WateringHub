@@ -62,10 +62,23 @@ DELETE_ZONE_SCHEMA = vol.Schema(
     }
 )
 
+VALVE_FREQUENCY_SCHEMA = vol.Schema(
+    {
+        vol.Required("type"): vol.In(["every_n_days", "weekdays"]),
+        vol.Optional("n"): vol.All(vol.Coerce(int), vol.Range(min=2)),
+        vol.Optional("days"): vol.All(
+            cv.ensure_list,
+            [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])],
+        ),
+        vol.Optional("start_date"): cv.string,
+    }
+)
+
 PROGRAM_VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("valve_id"): cv.string,
         vol.Required("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+        vol.Optional("frequency"): VALVE_FREQUENCY_SCHEMA,
     }
 )
 
