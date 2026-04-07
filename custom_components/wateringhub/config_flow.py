@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigFlow
 from .const import DOMAIN
 
 
-class WateringHubConfigFlow(ConfigFlow, domain=DOMAIN):
+class WateringHubConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for WateringHub."""
 
     VERSION = 1

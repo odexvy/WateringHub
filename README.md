@@ -1,5 +1,7 @@
 # WateringHub
 
+<img src="https://raw.githubusercontent.com/odexvy/WateringHub/master/images/icon.png" alt="WateringHub" width="128">
+
 Custom [Home Assistant](https://www.home-assistant.io/) integration for automated watering management.
 
 > **Requires [WateringHub Card](https://github.com/odexvy/WateringHubCard)** for the dashboard UI. Install it via HACS (Frontend > Plugin).
