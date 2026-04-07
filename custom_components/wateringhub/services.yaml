@@ -76,7 +76,7 @@ create_program:
         text:
     schedule:
       name: Schedule
-      description: "Schedule object with type (daily/every_n_days/weekdays), time, and optional n/days/start_date."
+      description: "Schedule object with trigger time: { time: '22:00' }. Frequency is set per valve, not per program."
       required: true
     zones:
       name: Zones
@@ -105,7 +105,7 @@ update_program:
         text:
     schedule:
       name: Schedule
-      description: New schedule object.
+      description: "New schedule object: { time: '22:00' }."
     zones:
       name: Zones
       description: "New zone references with valve durations. Each valve supports an optional frequency override."

@@ -91,14 +91,7 @@ PROGRAM_ZONE_SCHEMA = vol.Schema(
 
 SCHEDULE_SCHEMA = vol.Schema(
     {
-        vol.Required("type"): vol.In(["daily", "every_n_days", "weekdays"]),
         vol.Required("time"): cv.string,
-        vol.Optional("n"): vol.All(vol.Coerce(int), vol.Range(min=1)),
-        vol.Optional("days"): vol.All(
-            cv.ensure_list,
-            [vol.In(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])],
-        ),
-        vol.Optional("start_date"): cv.string,
     }
 )
 

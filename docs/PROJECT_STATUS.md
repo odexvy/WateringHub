@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-07
-**Version :** 0.0.14
+**Version :** 0.0.15
 **Branche :** master
 
 ---
@@ -60,24 +60,21 @@ configuration.yaml          .storage/wateringhub
 
 ## Scheduling
 
-### Schedule programme (global)
+### Schedule programme
 
-| Type           | Description                                    |
-| -------------- | ---------------------------------------------- |
-| `daily`        | Tous les jours à l'heure donnée                |
-| `every_n_days` | Tous les N jours depuis une date de départ     |
-| `weekdays`     | Jours spécifiques (mon, tue, wed, thu, fri, sat, sun) |
+Le programme ne définit que l'**heure de déclenchement** : `{ time: "22:00" }`. Il se déclenche tous les jours à cette heure. La fréquence est gérée par vanne.
 
-### Fréquence par vanne (override optionnel)
+### Fréquence par vanne
 
-Chaque vanne peut overrider la fréquence du programme. Sans `frequency`, la vanne suit le schedule global.
+Chaque vanne a sa propre fréquence. Sans `frequency`, la vanne tourne à chaque déclenchement (quotidien).
 
 | Type           | Champs                                | Description                        |
 | -------------- | ------------------------------------- | ---------------------------------- |
+| (absent)       | —                                     | Tourne à chaque déclenchement      |
 | `every_n_days` | `n` (min 2), `start_date` (optionnel) | Tous les N jours depuis start_date |
 | `weekdays`     | `days` (mon..sun)                     | Jours spécifiques de la semaine    |
 
-Si aucune vanne n'est éligible un jour donné, le programme ne démarre pas (reste `idle`).
+À chaque déclenchement, seules les vannes éligibles sont exécutées. Si aucune vanne n'est éligible, le programme ne démarre pas (reste `idle`).
 
 ---
 
@@ -113,8 +110,8 @@ Tous les events sont émis sur `wateringhub_event` :
 ```
 WateringHub/
 ├── custom_components/wateringhub/
-│   ├── __init__.py      (221 lignes)  Setup, validation YAML, service registration
-│   ├── coordinator.py   (783 lignes)  Storage, CRUD, mutex, scheduling, execution
+│   ├── __init__.py      (214 lignes)  Setup, validation YAML, service registration
+│   ├── coordinator.py   (763 lignes)  Storage, CRUD, mutex, scheduling, execution
 │   ├── sensor.py        (108 lignes)  Status, next_run, last_run sensors
 │   ├── switch.py         (99 lignes)  Dynamic program switches
 │   ├── const.py          (11 lignes)  Constants (DOMAIN, EVENT_TYPE, PLATFORMS)
@@ -136,7 +133,7 @@ WateringHub/
 └── LICENSE
 ```
 
-**Total** : ~1 220 lignes production, ~400 lignes tests
+**Total** : ~1 190 lignes production, ~400 lignes tests
 
 ---
 
@@ -208,8 +205,8 @@ WateringHub/
 11. **Recalcul next_run chaque minute** — `_async_time_tick` recalcule à chaque tick
 12. **`valves_sequence` sur le sensor status** — liste ordonnée de toutes les vannes du programme en cours avec `status: done/running/pending`, construite au lancement et mise à jour dynamiquement via `valves_done`
 13. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques, exposé sur switch et sensor status
-14. **Fréquence par vanne** — `frequency` optionnel sur chaque vanne d'un programme, types `every_n_days` (n min 2, start_date) et `weekdays` (days). Vannes non éligibles exclues de `valves_sequence`. Si aucune vanne éligible, le programme ne démarre pas
-15. **`_check_frequency` réutilisable** — méthode statique unique pour évaluer schedule programme et frequency vanne, évite la duplication de logique
+14. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement (`{ time: "22:00" }`), il se déclenche tous les jours. La fréquence est gérée par vanne, pas par programme (breaking change v0.0.14)
+15. **Fréquence par vanne** — `frequency` optionnel sur chaque vanne, types `every_n_days` (n min 2, start_date) et `weekdays` (days). Sans frequency = tourne à chaque déclenchement. Vannes non éligibles exclues de `valves_sequence`. Si aucune vanne éligible, le programme ne démarre pas
 
 ---
 

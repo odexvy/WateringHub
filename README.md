@@ -13,9 +13,8 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 
 - Configure physical valves (HA switch entities) in YAML
 - Create zones and programs dynamically via services (no restart needed)
-- Flexible schedules: daily, every N days, specific weekdays
-- Per-program valve durations
-- Per-valve frequency override: run specific valves every N days or on specific weekdays
+- Per-program valve durations with per-valve frequency (every N days, specific weekdays)
+- Program schedule = trigger time only, frequency is per valve
 - Strict mutex: only one program active at a time
 - Sequential valve execution with real-time progress tracking
 - Valve sequence with status (`done` / `running` / `pending`) exposed on status sensor
@@ -87,16 +86,16 @@ The `sensor.wateringhub_status` sensor exposes additional attributes depending o
 **When error:**
 - `current_program`, `error_message`
 
-### Per-valve frequency override
+### Per-valve frequency
 
-Each valve in a program can optionally override the program's schedule frequency. Valves without `frequency` run at every trigger. Valves with `frequency` only run on matching days.
+Each valve in a program can have its own frequency. Without `frequency`, the valve runs at every trigger (daily). With `frequency`, it only runs on matching days.
 
 | Frequency type | Fields | Description |
 |----------------|--------|-------------|
 | `every_n_days` | `n` (min 2), `start_date` (ISO, optional) | Every N days from start_date |
 | `weekdays` | `days` (mon, tue, ..., sun) | Specific days of the week |
 
-If no valve is eligible on a given day, the program does not start (stays `idle`).
+The program triggers every day at its scheduled time. Valves whose frequency doesn't match today are skipped. If no valve is eligible, the program does not start (stays `idle`).
 
 ## Services
 
@@ -131,7 +130,6 @@ data:
   name: Arrosage quotidien
   dry_run: false  # optional, simulate without commanding valves
   schedule:
-    type: daily
     time: "22:00"
   zones:
     - zone_id: jardin

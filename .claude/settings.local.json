@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python -m ruff check custom_components/wateringhub/coordinator.py)"
+      "Bash(python -m ruff check custom_components/wateringhub/coordinator.py)",
+      "Bash(python -m py_compile custom_components/wateringhub/__init__.py)",
+      "Bash(python -m py_compile custom_components/wateringhub/coordinator.py)",
+      "Bash(python -m ruff check custom_components/wateringhub/)",
+      "Bash(python -m ruff format --check custom_components/wateringhub/)"
     ]
   }
 }

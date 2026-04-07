@@ -18,7 +18,7 @@ Domain: `wateringhub`.
 
 - **Valves** = YAML only (`configuration.yaml`), physical hardware config
 - **Zones + Programs** = managed via HA services, persisted in `.storage/wateringhub`
-- **Per-valve frequency** = optional frequency override per valve (every_n_days, weekdays), evaluated at each trigger
+- **Schedule** = program defines trigger time only, frequency is per valve (every_n_days, weekdays, or daily by default)
 - **Coordinator** = central logic (mutex, scheduling, execution, CRUD, storage)
 - **Switches** = 1 per program, created/removed dynamically
 - **Sensors** = status (with execution tracking + available_valves + zones), next_run, last_run

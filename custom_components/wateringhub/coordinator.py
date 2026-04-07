@@ -17,8 +17,6 @@ from .const import EVENT_TYPE, STORAGE_KEY, STORAGE_VERSION, VALVE_PAUSE_SECONDS
 
 _LOGGER = logging.getLogger(__name__)
 
-MAX_SCHEDULE_LOOKAHEAD_DAYS = 400
-
 DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 
@@ -485,14 +483,10 @@ class WateringHubCoordinator:
         if not active:
             return
 
-        schedule = active["schedule"]
-        target_time = schedule["time"]
+        target_time = active["schedule"]["time"]
         current_time = now.strftime("%H:%M")
 
         if current_time != target_time:
-            return
-
-        if not self._should_run_today(active, now):
             return
 
         _LOGGER.info("Triggering program '%s'", active["id"])
@@ -505,30 +499,19 @@ class WateringHubCoordinator:
                 return program
         return None
 
-    def _should_run_today(self, program: dict, now) -> bool:
-        """Check if a program should run today based on schedule type."""
-        schedule = program["schedule"]
-        return self._check_frequency(schedule, now)
-
     @staticmethod
-    def _check_frequency(schedule: dict, now) -> bool:
-        """Check if a schedule/frequency dict matches today.
+    def _check_frequency(frequency: dict, now) -> bool:
+        """Check if a valve frequency matches today."""
+        freq_type = frequency.get("type")
 
-        Works for both program-level schedules and per-valve frequency overrides.
-        """
-        schedule_type = schedule.get("type", "daily")
-
-        if schedule_type == "daily":
-            return True
-
-        if schedule_type == "weekdays":
+        if freq_type == "weekdays":
             current_weekday: int = now.weekday()
-            allowed_days = schedule.get("days", [])
+            allowed_days = frequency.get("days", [])
             return bool(current_weekday in [DAY_MAP[d] for d in allowed_days if d in DAY_MAP])
 
-        if schedule_type == "every_n_days":
-            n = schedule.get("n", 1)
-            start_str = schedule.get("start_date")
+        if freq_type == "every_n_days":
+            n = frequency.get("n", 1)
+            start_str = frequency.get("start_date")
             if not start_str:
                 return True
             start_date = date.fromisoformat(start_str)
@@ -536,30 +519,27 @@ class WateringHubCoordinator:
             delta: int = (today - start_date).days
             return bool(delta >= 0 and delta % n == 0)
 
-        return False
+        return True
 
     def _recalculate_next_run(self) -> None:
-        """Recalculate the next_run datetime based on the active program."""
+        """Recalculate the next_run datetime based on the active program.
+
+        The program triggers every day at its scheduled time.
+        Valve-level frequency filtering happens at execution time.
+        """
         active = self._get_active_program()
         if not active:
             self._next_run = None
             return
 
-        schedule = active["schedule"]
-        hour, minute = map(int, schedule["time"].split(":"))
+        hour, minute = map(int, active["schedule"]["time"].split(":"))
         now = dt_util.now()
         candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
         if candidate <= now:
             candidate += timedelta(days=1)
 
-        for _ in range(MAX_SCHEDULE_LOOKAHEAD_DAYS):
-            if self._should_run_today(active, candidate):
-                self._next_run = candidate
-                return
-            candidate += timedelta(days=1)
-
-        self._next_run = None
+        self._next_run = candidate
 
     # --- Executor ---
 
