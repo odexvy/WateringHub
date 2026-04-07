@@ -7,9 +7,9 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DOMAIN
 from .coordinator import WateringHubCoordinator
@@ -17,11 +17,10 @@ from .coordinator import WateringHubCoordinator
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_platform(
+async def async_setup_entry(
     hass: HomeAssistant,
-    _config: ConfigType,
+    _entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    _discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up WateringHub sensors."""
     coordinator: WateringHubCoordinator = hass.data[DOMAIN]

@@ -1,9 +1,10 @@
 {
   "domain": "wateringhub",
   "name": "WateringHub",
+  "config_flow": true,
   "codeowners": [],
   "dependencies": [],
   "documentation": "https://github.com/odexvy/WateringHub",
   "iot_class": "local_push",
-  "version": "0.0.16"
+  "version": "0.0.17"
 }

@@ -7,21 +7,14 @@ from __future__ import annotations
 import logging
 
 import voluptuous as vol
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.discovery import async_load_platform
-from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import WateringHubCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-
-CONFIG_SCHEMA = vol.Schema(
-    {DOMAIN: vol.Schema({})},
-    extra=vol.ALLOW_EXTRA,
-)
 
 # --- Service schemas ---
 
@@ -118,93 +111,92 @@ SET_VALVES_SCHEMA = vol.Schema(
 )
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up WateringHub."""
-    try:
-        coordinator = WateringHubCoordinator(hass)
-        await coordinator.async_load()
-        hass.data[DOMAIN] = coordinator
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up WateringHub from a config entry."""
+    coordinator = WateringHubCoordinator(hass)
+    await coordinator.async_load()
+    hass.data[DOMAIN] = coordinator
 
-        for platform in PLATFORMS:
-            await async_load_platform(hass, platform, DOMAIN, {}, config)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-        # --- Register services ---
+    # --- Register services ---
 
-        async def handle_stop_all(_call: ServiceCall) -> None:
-            await coordinator.async_stop_all()
+    async def handle_stop_all(_call: ServiceCall) -> None:
+        await coordinator.async_stop_all()
 
-        async def handle_set_valves(call: ServiceCall) -> None:
-            await coordinator.async_set_valves(call.data["valves"])
+    async def handle_set_valves(call: ServiceCall) -> None:
+        await coordinator.async_set_valves(call.data["valves"])
 
-        async def handle_create_zone(call: ServiceCall) -> None:
-            await coordinator.async_create_zone(
-                call.data["id"],
-                call.data["name"],
-                call.data["valves"],
-            )
-
-        async def handle_update_zone(call: ServiceCall) -> None:
-            await coordinator.async_update_zone(
-                call.data["id"],
-                name=call.data.get("name"),
-                valves=call.data.get("valves"),
-            )
-
-        async def handle_delete_zone(call: ServiceCall) -> None:
-            await coordinator.async_delete_zone(call.data["id"])
-
-        async def handle_create_program(call: ServiceCall) -> None:
-            await coordinator.async_create_program(
-                call.data["id"],
-                call.data["name"],
-                call.data["schedule"],
-                call.data["zones"],
-                dry_run=call.data.get("dry_run", False),
-            )
-
-        async def handle_update_program(call: ServiceCall) -> None:
-            await coordinator.async_update_program(
-                call.data["id"],
-                name=call.data.get("name"),
-                schedule=call.data.get("schedule"),
-                zones=call.data.get("zones"),
-                dry_run=call.data.get("dry_run"),
-            )
-
-        async def handle_delete_program(call: ServiceCall) -> None:
-            await coordinator.async_delete_program(call.data["id"])
-
-        hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
-        hass.services.async_register(
-            DOMAIN, "set_valves", handle_set_valves, schema=SET_VALVES_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "create_zone", handle_create_zone, schema=CREATE_ZONE_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "update_zone", handle_update_zone, schema=UPDATE_ZONE_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "delete_zone", handle_delete_zone, schema=DELETE_ZONE_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "create_program", handle_create_program, schema=CREATE_PROGRAM_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "update_program", handle_update_program, schema=UPDATE_PROGRAM_SCHEMA
-        )
-        hass.services.async_register(
-            DOMAIN, "delete_program", handle_delete_program, schema=DELETE_PROGRAM_SCHEMA
+    async def handle_create_zone(call: ServiceCall) -> None:
+        await coordinator.async_create_zone(
+            call.data["id"],
+            call.data["name"],
+            call.data["valves"],
         )
 
-        async def handle_shutdown(_event) -> None:
-            await coordinator.async_stop()
+    async def handle_update_zone(call: ServiceCall) -> None:
+        await coordinator.async_update_zone(
+            call.data["id"],
+            name=call.data.get("name"),
+            valves=call.data.get("valves"),
+        )
 
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, handle_shutdown)
+    async def handle_delete_zone(call: ServiceCall) -> None:
+        await coordinator.async_delete_zone(call.data["id"])
 
-        coordinator.start()
-    except Exception:
-        _LOGGER.exception("Failed to set up WateringHub")
-        return False
+    async def handle_create_program(call: ServiceCall) -> None:
+        await coordinator.async_create_program(
+            call.data["id"],
+            call.data["name"],
+            call.data["schedule"],
+            call.data["zones"],
+            dry_run=call.data.get("dry_run", False),
+        )
 
+    async def handle_update_program(call: ServiceCall) -> None:
+        await coordinator.async_update_program(
+            call.data["id"],
+            name=call.data.get("name"),
+            schedule=call.data.get("schedule"),
+            zones=call.data.get("zones"),
+            dry_run=call.data.get("dry_run"),
+        )
+
+    async def handle_delete_program(call: ServiceCall) -> None:
+        await coordinator.async_delete_program(call.data["id"])
+
+    hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
+    hass.services.async_register(DOMAIN, "set_valves", handle_set_valves, schema=SET_VALVES_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, "create_zone", handle_create_zone, schema=CREATE_ZONE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "update_zone", handle_update_zone, schema=UPDATE_ZONE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "delete_zone", handle_delete_zone, schema=DELETE_ZONE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "create_program", handle_create_program, schema=CREATE_PROGRAM_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "update_program", handle_update_program, schema=UPDATE_PROGRAM_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "delete_program", handle_delete_program, schema=DELETE_PROGRAM_SCHEMA
+    )
+
+    coordinator.start()
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    coordinator: WateringHubCoordinator = hass.data[DOMAIN]
+    await coordinator.async_stop()
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data.pop(DOMAIN)
+
+    return unload_ok

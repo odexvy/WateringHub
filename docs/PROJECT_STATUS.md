@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-07
-**Version :** 0.0.16
+**Version :** 0.0.17
 **Branche :** master
 
 ---
@@ -12,7 +12,7 @@
 .storage/wateringhub (valves + zones + programs JSON)
         |
         v
-   __init__.py ---- config validation + service registration
+   __init__.py ---- config flow + service registration
         |
         v
    coordinator.py ---- storage, CRUD, mutex, scheduling, execution
@@ -22,7 +22,8 @@
 ```
 
 **Principes :**
-- **Valves** = via service `set_valves`, persistance `.storage` (YAML en fallback)
+- **Valves** = via service `set_valves`, persistance `.storage` (pas de YAML)
+- **Config flow** = setup via UI HA (Paramètres > Appareils & Services > Ajouter)
 - **Zones + Programs** = CRUD dynamique via services HA, persistance `.storage`
 - **Coordinator** = cerveau central (mutex, scheduler, executor)
 - **Entities** = switches dynamiques + 3 sensors, listener-driven (pas de polling)
@@ -110,12 +111,14 @@ Tous les events sont émis sur `wateringhub_event` :
 ```
 WateringHub/
 ├── custom_components/wateringhub/
-│   ├── __init__.py      (228 lignes)  Setup, validation, service registration
+│   ├── __init__.py      (204 lignes)  Config entry setup, service registration
+│   ├── config_flow.py    (25 lignes)  Config flow (UI setup, single instance)
 │   ├── coordinator.py   (798 lignes)  Storage, CRUD, mutex, scheduling, execution
-│   ├── sensor.py        (108 lignes)  Status, next_run, last_run sensors
-│   ├── switch.py         (99 lignes)  Dynamic program switches
+│   ├── sensor.py        (107 lignes)  Status, next_run, last_run sensors
+│   ├── switch.py         (98 lignes)  Dynamic program switches
 │   ├── const.py          (11 lignes)  Constants (DOMAIN, EVENT_TYPE, PLATFORMS)
-│   ├── manifest.json                  HACS metadata
+│   ├── manifest.json                  HACS metadata (config_flow: true)
+│   ├── strings.json                   Config flow UI strings
 │   └── services.yaml                  Service schemas + descriptions
 ├── tests/
 │   ├── conftest.py                    Fixtures (mock hass, coordinator)
@@ -133,7 +136,7 @@ WateringHub/
 └── LICENSE
 ```
 
-**Total** : ~1 240 lignes production, ~400 lignes tests
+**Total** : ~1 250 lignes production, ~400 lignes tests
 
 ---
 
@@ -173,7 +176,7 @@ WateringHub/
 
 | #   | Description                                                                  | Fichier                              |
 | --- | ---------------------------------------------------------------------------- | ------------------------------------ |
-| 6   | Dead code `flow_sensor` : dans le schema mais jamais utilisé                 | `__init__.py:26`                     |
+| 6   | ~~Dead code `flow_sensor`~~ — supprimé avec le YAML config                   | —                                    |
 | 7   | Type hints manquants sur `last_run`, `next_run`, `native_value`, callbacks   | `coordinator.py`, `sensor.py`        |
 | 8   | `except Exception:` trop large (2 occurrences)                               | `__init__.py:200`, `coordinator.py:408` |
 | 9   | `async_run_program()` trop long (~107 lignes), à décomposer                 | `coordinator.py:519-625`             |
@@ -192,7 +195,7 @@ WateringHub/
 
 ## Décisions prises
 
-1. **Valves via service** — les vannes sont gérées via `set_valves`, persistées dans `.storage`. YAML en fallback uniquement
+1. **Valves via service** — les vannes sont gérées via `set_valves`, persistées dans `.storage`. Pas de YAML
 2. **Zones + programmes dynamiques** — CRUD via services HA, persistance `.storage/wateringhub`
 3. **Mutex strict** — 1 seul programme actif, le switch d'un programme désactive les autres
 4. **Listener-driven** — pas de polling, les entities s'abonnent au coordinator
@@ -207,8 +210,9 @@ WateringHub/
 13. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques, exposé sur switch et sensor status
 14. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement (`{ time: "22:00" }`), il se déclenche tous les jours. La fréquence est gérée par vanne, pas par programme (breaking change v0.0.14)
 15. **Fréquence par vanne** — `frequency` optionnel sur chaque vanne, types `every_n_days` (n min 2, start_date) et `weekdays` (days). Sans frequency = tourne à chaque déclenchement. Vannes non éligibles exclues de `valves_sequence`. Si aucune vanne éligible, le programme ne démarre pas
-16. **`set_valves` service** — remplace la liste complète des vannes, match par `entity_id` pour préserver les IDs existants, persiste dans `.storage`. YAML optionnel en fallback
+16. **`set_valves` service** — remplace la liste complète des vannes, match par `entity_id` pour préserver les IDs existants, persiste dans `.storage`
 17. **Pause inter-vannes réduite** — passée de 5s à 1s
+18. **Config flow** — setup via UI HA (plus de YAML), `async_setup_entry` / `async_unload_entry`, single instance
 
 ---
 

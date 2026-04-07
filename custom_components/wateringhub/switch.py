@@ -7,10 +7,10 @@ from __future__ import annotations
 import logging
 
 from homeassistant.components.switch import SwitchEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get as async_get_entity_registry
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import DOMAIN
 from .coordinator import WateringHubCoordinator
@@ -21,11 +21,10 @@ _LOGGER = logging.getLogger(__name__)
 _program_switches: dict[str, ProgramSwitch] = {}
 
 
-async def async_setup_platform(
+async def async_setup_entry(
     hass: HomeAssistant,
-    _config: ConfigType,
+    _entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
-    _discovery_info: DiscoveryInfoType | None = None,
 ) -> None:
     """Set up WateringHub program switches."""
     coordinator: WateringHubCoordinator = hass.data[DOMAIN]

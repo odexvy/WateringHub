@@ -11,7 +11,7 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 
 ## Features
 
-- Configure valves via `set_valves` service or YAML fallback (no restart needed)
+- Configure valves via `set_valves` service (no YAML, no restart needed)
 - Create zones and programs dynamically via services (no restart needed)
 - Per-program valve durations with per-valve frequency (every N days, specific weekdays)
 - Program schedule = trigger time only, frequency is per valve
@@ -29,22 +29,17 @@ Custom [Home Assistant](https://www.home-assistant.io/) integration for automate
 3. Add this repository URL, category **Integration**
 4. Install **WateringHub**
 5. Restart Home Assistant
+6. Go to **Settings** > **Devices & Services** > **Add Integration** > **WateringHub**
 
 ### Manual
 
-Copy `custom_components/wateringhub/` into your HA `custom_components/` directory.
+Copy `custom_components/wateringhub/` into your HA `custom_components/` directory, then add the integration via the UI.
 
 ## Configuration
 
-Valves, zones and programs are all managed via services (from the config card or HA developer tools). No YAML configuration required.
+No YAML required. Everything is managed via services (from the config card or HA developer tools).
 
-Add `wateringhub:` to your `configuration.yaml` to enable the integration:
-
-```yaml
-wateringhub:
-```
-
-Then configure valves via the `set_valves` service:
+After adding the integration, configure valves via the `set_valves` service:
 
 ```yaml
 service: wateringhub.set_valves
@@ -55,8 +50,6 @@ data:
     - entity_id: switch.relay_2
       name: Flower beds
 ```
-
-YAML valve config is still supported as fallback (used until `set_valves` is called).
 
 ## Entities
 
