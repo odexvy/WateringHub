@@ -266,3 +266,74 @@ class TestCRUDPrograms:
         await coordinator.async_delete_program("prog_b")
         assert "prog_b" not in coordinator.programs
         coordinator._remove_entity_callback.assert_called_once_with("prog_b")
+
+
+class TestSkipProgram:
+    """Test skip_program functionality."""
+
+    @pytest.mark.asyncio
+    async def test_skip_sets_field(self, coordinator):
+        """days > 0 sets skip_until to today + days as ISO string."""
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 10, 12, 0)
+            await coordinator.async_skip_program("prog_a", 3)
+        assert coordinator.programs["prog_a"]["skip_until"] == "2026-04-13"
+
+    @pytest.mark.asyncio
+    async def test_skip_zero_clears(self, coordinator):
+        """days = 0 clears skip_until to None."""
+        coordinator._programs["prog_a"]["skip_until"] = "2026-12-31"
+        await coordinator.async_skip_program("prog_a", 0)
+        assert coordinator.programs["prog_a"]["skip_until"] is None
+
+    @pytest.mark.asyncio
+    async def test_skip_nonexistent_raises(self, coordinator):
+        """Raises ValueError for unknown program_id."""
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.async_skip_program("nonexistent", 3)
+
+    @pytest.mark.asyncio
+    async def test_skip_disabled_raises(self, coordinator):
+        """Raises ValueError for disabled program."""
+        with pytest.raises(ValueError, match="not enabled"):
+            await coordinator.async_skip_program("prog_b", 3)
+
+    @pytest.mark.asyncio
+    async def test_skip_persists(self, coordinator):
+        """Skip triggers storage save."""
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 10, 12, 0)
+            await coordinator.async_skip_program("prog_a", 2)
+        coordinator._store.async_save.assert_called()
+
+    def test_next_run_reflects_skip(self, coordinator):
+        """next_run jumps to skip_until date when skip is active."""
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 10, 20, 0)
+            coordinator._programs["prog_a"]["skip_until"] = "2026-04-15"
+            coordinator._recalculate_next_run()
+        assert coordinator.next_run is not None
+        assert coordinator.next_run.month == 4
+        assert coordinator.next_run.day == 15
+        assert coordinator.next_run.hour == 22
+
+    def test_next_run_no_skip(self, coordinator):
+        """next_run is normal when skip_until is None."""
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 10, 20, 0)
+            coordinator._programs["prog_a"]["skip_until"] = None
+            coordinator._recalculate_next_run()
+        # 20:00 < 22:00, so next_run is today at 22:00
+        assert coordinator.next_run.day == 10
+        assert coordinator.next_run.hour == 22
+
+    @pytest.mark.asyncio
+    async def test_auto_clear_on_expiry(self, coordinator):
+        """_async_time_tick auto-clears skip_until when expired."""
+        # Set skip_until to today (should expire and clear)
+        coordinator._programs["prog_a"]["skip_until"] = "2026-04-10"
+        now = datetime(2026, 4, 10, 22, 0)
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = now
+            await coordinator._async_time_tick(now)
+        assert coordinator.programs["prog_a"]["skip_until"] is None

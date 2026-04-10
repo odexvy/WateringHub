@@ -70,9 +70,10 @@ class WateringHubCoordinator:
             self._zones = {z["id"]: z for z in data.get("zones", [])}
             self._programs = {p["id"]: dict(p) for p in data.get("programs", [])}
             self._active_program = data.get("active_program")
-            # Restore enabled state
+            # Restore enabled state + backfill skip_until for pre-existing data
             for pid in self._programs:
                 self._programs[pid]["enabled"] = pid == self._active_program
+                self._programs[pid].setdefault("skip_until", None)
             _LOGGER.info(
                 "Loaded %d valves, %d zones, %d programs from storage",
                 len(self._valves),
@@ -321,6 +322,7 @@ class WateringHubCoordinator:
             "name": name,
             "enabled": False,
             "dry_run": dry_run,
+            "skip_until": None,
             "schedule": schedule,
             "zones": zones,
         }
@@ -376,6 +378,25 @@ class WateringHubCoordinator:
         self._notify_listeners()
         _LOGGER.info("Program '%s' deleted", program_id)
 
+    async def async_skip_program(self, program_id: str, days: int) -> None:
+        """Skip a program for N days (0 clears skip)."""
+        if program_id not in self._programs:
+            raise ValueError(f"Program '{program_id}' not found")
+        if not self._programs[program_id]["enabled"]:
+            raise ValueError(f"Program '{program_id}' is not enabled")
+
+        if days == 0:
+            self._programs[program_id]["skip_until"] = None
+            _LOGGER.info("Program '%s' skip cleared", program_id)
+        else:
+            skip_until = (dt_util.now().date() + timedelta(days=days)).isoformat()
+            self._programs[program_id]["skip_until"] = skip_until
+            _LOGGER.info("Program '%s' skipped until %s", program_id, skip_until)
+
+        await self._async_save()
+        self._recalculate_next_run()
+        self._notify_listeners()
+
     # --- Program details (for switch attributes) ---
 
     def get_program_details(self, program_id: str) -> dict:
@@ -416,6 +437,7 @@ class WateringHubCoordinator:
             "zones": zones,
             "total_duration": total_duration,
             "dry_run": program.get("dry_run", False),
+            "skip_until": program.get("skip_until"),
         }
 
     # --- Mutex ---
@@ -514,6 +536,20 @@ class WateringHubCoordinator:
         if not active:
             return
 
+        # Check skip_until: skip execution or auto-clear if expired
+        skip_until_str = active.get("skip_until")
+        if skip_until_str:
+            today = dt_util.now().date()
+            skip_date = date.fromisoformat(skip_until_str)
+            if today < skip_date:
+                return
+            # Skip period expired — auto-clear and resume
+            active["skip_until"] = None
+            await self._async_save()
+            self._recalculate_next_run()
+            self._notify_listeners()
+            _LOGGER.info("Program '%s' skip expired, resuming", active["id"])
+
         target_time = active["schedule"]["time"]
         current_time = now.strftime("%H:%M")
 
@@ -569,6 +605,18 @@ class WateringHubCoordinator:
 
         if candidate <= now:
             candidate += timedelta(days=1)
+
+        # If skip is active, advance candidate to skip_until date
+        skip_until_str = active.get("skip_until")
+        if skip_until_str:
+            skip_date = date.fromisoformat(skip_until_str)
+            skip_candidate = candidate.replace(
+                year=skip_date.year,
+                month=skip_date.month,
+                day=skip_date.day,
+            )
+            if skip_candidate > candidate:
+                candidate = skip_candidate
 
         self._next_run = candidate
 

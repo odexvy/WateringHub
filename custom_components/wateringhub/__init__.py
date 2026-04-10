@@ -97,6 +97,13 @@ DELETE_PROGRAM_SCHEMA = vol.Schema(
     }
 )
 
+SKIP_PROGRAM_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
+        vol.Required("days"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    }
+)
+
 SET_VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.string,
@@ -165,6 +172,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_delete_program(call: ServiceCall) -> None:
         await coordinator.async_delete_program(call.data["id"])
 
+    async def handle_skip_program(call: ServiceCall) -> None:
+        await coordinator.async_skip_program(call.data["id"], call.data["days"])
+
     hass.services.async_register(DOMAIN, "stop_all", handle_stop_all)
     hass.services.async_register(DOMAIN, "set_valves", handle_set_valves, schema=SET_VALVES_SCHEMA)
     hass.services.async_register(
@@ -184,6 +194,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.services.async_register(
         DOMAIN, "delete_program", handle_delete_program, schema=DELETE_PROGRAM_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "skip_program", handle_skip_program, schema=SKIP_PROGRAM_SCHEMA
     )
 
     coordinator.start()

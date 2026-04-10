@@ -134,3 +134,23 @@ delete_program:
       required: true
       selector:
         text:
+
+skip_program:
+  name: Skip Program
+  description: "Suspend a program for N days without disabling it. Use days=0 to cancel."
+  fields:
+    id:
+      name: Program ID
+      description: ID of the program to skip.
+      required: true
+      selector:
+        text:
+    days:
+      name: Days
+      description: "Number of days to skip (0 to clear)."
+      required: true
+      example: "3"
+      selector:
+        number:
+          min: 0
+          mode: box

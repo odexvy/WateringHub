@@ -44,6 +44,7 @@ def sample_programs():
             "id": "prog_a",
             "name": "Program A",
             "enabled": True,
+            "skip_until": None,
             "schedule": {"time": "22:00"},
             "zones": [
                 {
@@ -59,6 +60,7 @@ def sample_programs():
             "id": "prog_b",
             "name": "Program B",
             "enabled": False,
+            "skip_until": None,
             "schedule": {"time": "08:00"},
             "zones": [
                 {
