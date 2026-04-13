@@ -40,6 +40,26 @@ DELETE_ZONE_SCHEMA = vol.Schema(
     }
 )
 
+CREATE_WATER_SUPPLY_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
+        vol.Required("name"): cv.string,
+    }
+)
+
+UPDATE_WATER_SUPPLY_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
+        vol.Optional("name"): cv.string,
+    }
+)
+
+DELETE_WATER_SUPPLY_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): cv.string,
+    }
+)
+
 VALVE_FREQUENCY_SCHEMA = vol.Schema(
     {
         vol.Required("type"): vol.In(["every_n_days", "weekdays"]),
@@ -108,6 +128,7 @@ SET_VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.string,
         vol.Required("name"): cv.string,
+        vol.Required("water_supply_id"): cv.string,
     }
 )
 
@@ -151,6 +172,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_delete_zone(call: ServiceCall) -> None:
         await coordinator.async_delete_zone(call.data["id"])
 
+    async def handle_create_water_supply(call: ServiceCall) -> None:
+        await coordinator.async_create_water_supply(
+            call.data["id"],
+            call.data["name"],
+        )
+
+    async def handle_update_water_supply(call: ServiceCall) -> None:
+        await coordinator.async_update_water_supply(
+            call.data["id"],
+            name=call.data.get("name"),
+        )
+
+    async def handle_delete_water_supply(call: ServiceCall) -> None:
+        await coordinator.async_delete_water_supply(call.data["id"])
+
     async def handle_create_program(call: ServiceCall) -> None:
         await coordinator.async_create_program(
             call.data["id"],
@@ -185,6 +221,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.services.async_register(
         DOMAIN, "delete_zone", handle_delete_zone, schema=DELETE_ZONE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "create_water_supply",
+        handle_create_water_supply,
+        schema=CREATE_WATER_SUPPLY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "update_water_supply",
+        handle_update_water_supply,
+        schema=UPDATE_WATER_SUPPLY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "delete_water_supply",
+        handle_delete_water_supply,
+        schema=DELETE_WATER_SUPPLY_SCHEMA,
     )
     hass.services.async_register(
         DOMAIN, "create_program", handle_create_program, schema=CREATE_PROGRAM_SCHEMA

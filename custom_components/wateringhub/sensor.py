@@ -54,6 +54,7 @@ class StatusSensor(SensorEntity):
             **self._coordinator.execution_state,
             "available_valves": list(self._coordinator.valves.values()),
             "zones": list(self._coordinator.zones.values()),
+            "water_supplies": list(self._coordinator.water_supplies.values()),
         }
 
     async def async_added_to_hass(self) -> None:

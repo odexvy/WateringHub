@@ -27,10 +27,11 @@ def mock_hass():
 
 
 @pytest.fixture
-def coordinator(mock_hass, sample_valves, sample_zones, sample_programs):
+def coordinator(mock_hass, sample_valves, sample_zones, sample_programs, sample_water_supplies):
     """Create a coordinator with sample data."""
     coord = WateringHubCoordinator(mock_hass)
     coord._valves = sample_valves
+    coord._water_supplies = {ws["id"]: ws for ws in sample_water_supplies}
     # Manually load zones and programs (bypassing storage)
     coord._zones = {z["id"]: z for z in sample_zones}
     coord._programs = {p["id"]: dict(p) for p in sample_programs}
@@ -186,7 +187,8 @@ class TestProgramDetails:
     def test_resolves_zones_and_valves(self, coordinator):
         details = coordinator.get_program_details("prog_a")
         assert details["program_id"] == "prog_a"
-        assert details["total_duration"] == 25
+        # max(ws_a=10, ws_b=15) = 15
+        assert details["total_duration"] == 15
         assert len(details["zones"]) == 1
         assert details["zones"][0]["zone_name"] == "Test Zone"
         assert len(details["zones"][0]["valves"]) == 2
@@ -337,3 +339,138 @@ class TestSkipProgram:
             mock_dt.now.return_value = now
             await coordinator._async_time_tick(now)
         assert coordinator.programs["prog_a"]["skip_until"] is None
+
+
+class TestCRUDWaterSupplies:
+    """Test water supply CRUD operations."""
+
+    @pytest.mark.asyncio
+    async def test_create_water_supply(self, coordinator):
+        await coordinator.async_create_water_supply("ws_new", "New Supply")
+        assert "ws_new" in coordinator.water_supplies
+        assert coordinator.water_supplies["ws_new"]["name"] == "New Supply"
+
+    @pytest.mark.asyncio
+    async def test_create_water_supply_duplicate(self, coordinator):
+        with pytest.raises(ValueError, match="already exists"):
+            await coordinator.async_create_water_supply("ws_a", "Duplicate")
+
+    @pytest.mark.asyncio
+    async def test_update_water_supply(self, coordinator):
+        await coordinator.async_update_water_supply("ws_a", name="Renamed")
+        assert coordinator.water_supplies["ws_a"]["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_update_water_supply_not_found(self, coordinator):
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.async_update_water_supply("nonexistent", name="X")
+
+    @pytest.mark.asyncio
+    async def test_delete_water_supply(self, coordinator):
+        await coordinator.async_create_water_supply("ws_unused", "Unused")
+        await coordinator.async_delete_water_supply("ws_unused")
+        assert "ws_unused" not in coordinator.water_supplies
+
+    @pytest.mark.asyncio
+    async def test_delete_water_supply_in_use(self, coordinator):
+        with pytest.raises(ValueError, match="used by valve"):
+            await coordinator.async_delete_water_supply("ws_a")
+
+    @pytest.mark.asyncio
+    async def test_delete_water_supply_not_found(self, coordinator):
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.async_delete_water_supply("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_create_water_supply_persists(self, coordinator):
+        await coordinator.async_create_water_supply("ws_new", "New")
+        coordinator._store.async_save.assert_called()
+
+
+class TestSetValvesWaterSupply:
+    """Test set_valves with water_supply_id."""
+
+    @pytest.mark.asyncio
+    async def test_set_valves_with_valid_water_supply(self, coordinator):
+        await coordinator.async_set_valves(
+            [
+                {
+                    "entity_id": "switch.test_valve_1",
+                    "name": "Valve 1",
+                    "water_supply_id": "ws_a",
+                },
+            ]
+        )
+        valve = next(iter(coordinator.valves.values()))
+        assert valve["water_supply_id"] == "ws_a"
+
+    @pytest.mark.asyncio
+    async def test_set_valves_with_invalid_water_supply(self, coordinator):
+        with pytest.raises(ValueError, match="Unknown water supply"):
+            await coordinator.async_set_valves(
+                [
+                    {
+                        "entity_id": "switch.test_valve_1",
+                        "name": "Valve 1",
+                        "water_supply_id": "nonexistent",
+                    },
+                ]
+            )
+
+    @pytest.mark.asyncio
+    async def test_set_valves_persists_water_supply_id(self, coordinator):
+        await coordinator.async_set_valves(
+            [
+                {
+                    "entity_id": "switch.test_valve_1",
+                    "name": "Valve 1",
+                    "water_supply_id": "ws_b",
+                },
+            ]
+        )
+        coordinator._store.async_save.assert_called()
+        valve = next(iter(coordinator.valves.values()))
+        assert valve["water_supply_id"] == "ws_b"
+
+
+class TestParallelExecution:
+    """Test parallel execution across water supplies."""
+
+    def test_group_by_supply(self):
+        """Unit test for _group_by_supply static method."""
+        sequence = [
+            {"valve_id": "v1", "water_supply_id": "a"},
+            {"valve_id": "v2", "water_supply_id": "b"},
+            {"valve_id": "v3", "water_supply_id": "a"},
+        ]
+        groups = WateringHubCoordinator._group_by_supply(sequence)
+        assert list(groups.keys()) == ["a", "b"]
+        assert len(groups["a"]) == 2
+        assert len(groups["b"]) == 1
+        assert groups["a"][0]["valve_id"] == "v1"
+        assert groups["a"][1]["valve_id"] == "v3"
+
+    def test_total_duration_max_per_supply(self, coordinator):
+        """total_duration = max of sum per supply, not raw sum."""
+        details = coordinator.get_program_details("prog_a")
+        # valve_1 on ws_a: 10 min, valve_2 on ws_b: 15 min
+        # max(10, 15) = 15, not 25
+        assert details["total_duration"] == 15
+
+    def test_execution_state_has_active_valves(self, coordinator):
+        """execution_state returns active_valves, not current_valve_*."""
+        state = coordinator.execution_state
+        assert "active_valves" in state
+        assert "current_valve" not in state
+        assert "current_zone" not in state
+
+    def test_build_sequence_has_water_supply_id(self, coordinator):
+        """_build_valves_sequence includes water_supply_id and status."""
+        program = coordinator.programs["prog_a"]
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            mock_dt.now.return_value = datetime(2026, 4, 12, 22, 0)
+            sequence = coordinator._build_valves_sequence(program, mock_dt.now())
+        assert len(sequence) == 2
+        assert sequence[0]["water_supply_id"] == "ws_a"
+        assert sequence[1]["water_supply_id"] == "ws_b"
+        assert sequence[0]["status"] == "pending"

@@ -1,10 +1,10 @@
 set_valves:
   name: Set Valves
-  description: "Replace the entire valve list. Existing valves matched by entity_id keep their ID."
+  description: "Replace the entire valve list. Each valve requires entity_id, name, and water_supply_id."
   fields:
     valves:
       name: Valves
-      description: "List of valves with entity_id (HA switch entity) and name."
+      description: "List of valves with entity_id (HA switch entity), name, and water_supply_id."
       required: true
 
 stop_all:
@@ -61,6 +61,52 @@ delete_zone:
     id:
       name: Zone ID
       description: ID of the zone to delete.
+      required: true
+      selector:
+        text:
+
+create_water_supply:
+  name: Create Water Supply
+  description: Create a new water supply source.
+  fields:
+    id:
+      name: Water Supply ID
+      description: Unique identifier for the water supply.
+      required: true
+      example: "arrivee_jardin"
+      selector:
+        text:
+    name:
+      name: Water Supply Name
+      description: Display name for the water supply.
+      required: true
+      example: "Arrivée jardin"
+      selector:
+        text:
+
+update_water_supply:
+  name: Update Water Supply
+  description: Update an existing water supply.
+  fields:
+    id:
+      name: Water Supply ID
+      description: ID of the water supply to update.
+      required: true
+      selector:
+        text:
+    name:
+      name: Water Supply Name
+      description: New display name.
+      selector:
+        text:
+
+delete_water_supply:
+  name: Delete Water Supply
+  description: Delete a water supply. Fails if any valve references it.
+  fields:
+    id:
+      name: Water Supply ID
+      description: ID of the water supply to delete.
       required: true
       selector:
         text:

@@ -15,13 +15,24 @@ def sample_valves():
             "id": "valve_1",
             "name": "Test Valve 1",
             "entity_id": "switch.test_valve_1",
+            "water_supply_id": "ws_a",
         },
         "valve_2": {
             "id": "valve_2",
             "name": "Test Valve 2",
             "entity_id": "switch.test_valve_2",
+            "water_supply_id": "ws_b",
         },
     }
+
+
+@pytest.fixture
+def sample_water_supplies():
+    """Return water supply data as stored in .storage."""
+    return [
+        {"id": "ws_a", "name": "Arrivee A"},
+        {"id": "ws_b", "name": "Arrivee B"},
+    ]
 
 
 @pytest.fixture

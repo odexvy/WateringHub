@@ -27,6 +27,7 @@ class WateringHubCoordinator:
         self.hass = hass
         self._valves: dict[str, dict] = {}
         self._zones: dict[str, dict] = {}
+        self._water_supplies: dict[str, dict] = {}
         self._programs: dict[str, dict] = {}
         self._active_program: str | None = None
 
@@ -44,15 +45,10 @@ class WateringHubCoordinator:
 
         # Execution progress tracking
         self._current_program: str | None = None
-        self._current_zone: str | None = None
-        self._current_zone_name: str | None = None
-        self._current_valve: str | None = None
-        self._current_valve_name: str | None = None
-        self._current_valve_start = None
-        self._current_valve_duration: int = 0
         self._valves_done: int = 0
         self._valves_total: int = 0
         self._valves_sequence: list[dict] = []
+        self._active_valves: list[dict] = []
         self._dry_run: bool = False
         self._error_message: str | None = None
 
@@ -68,6 +64,7 @@ class WateringHubCoordinator:
         if data:
             self._valves = {v["id"]: v for v in data.get("valves", [])}
             self._zones = {z["id"]: z for z in data.get("zones", [])}
+            self._water_supplies = {ws["id"]: ws for ws in data.get("water_supplies", [])}
             self._programs = {p["id"]: dict(p) for p in data.get("programs", [])}
             self._active_program = data.get("active_program")
             # Restore enabled state + backfill skip_until for pre-existing data
@@ -75,9 +72,10 @@ class WateringHubCoordinator:
                 self._programs[pid]["enabled"] = pid == self._active_program
                 self._programs[pid].setdefault("skip_until", None)
             _LOGGER.info(
-                "Loaded %d valves, %d zones, %d programs from storage",
+                "Loaded %d valves, %d zones, %d water supplies, %d programs from storage",
                 len(self._valves),
                 len(self._zones),
+                len(self._water_supplies),
                 len(self._programs),
             )
         else:
@@ -88,6 +86,7 @@ class WateringHubCoordinator:
         data = {
             "valves": list(self._valves.values()),
             "zones": list(self._zones.values()),
+            "water_supplies": list(self._water_supplies.values()),
             "programs": list(self._programs.values()),
             "active_program": self._active_program,
         }
@@ -102,6 +101,10 @@ class WateringHubCoordinator:
     @property
     def zones(self) -> dict[str, dict]:
         return self._zones
+
+    @property
+    def water_supplies(self) -> dict[str, dict]:
+        return self._water_supplies
 
     @property
     def programs(self) -> dict[str, dict]:
@@ -129,12 +132,7 @@ class WateringHubCoordinator:
         if self._status == "error":
             return {
                 "current_program": self._current_program,
-                "current_zone": None,
-                "current_zone_name": None,
-                "current_valve": None,
-                "current_valve_name": None,
-                "current_valve_start": None,
-                "current_valve_duration": None,
+                "active_valves": [],
                 "valves_done": None,
                 "valves_total": None,
                 "progress_percent": None,
@@ -146,12 +144,7 @@ class WateringHubCoordinator:
         if self._status != "running":
             return {
                 "current_program": None,
-                "current_zone": None,
-                "current_zone_name": None,
-                "current_valve": None,
-                "current_valve_name": None,
-                "current_valve_start": None,
-                "current_valve_duration": None,
+                "active_valves": [],
                 "valves_done": None,
                 "valves_total": None,
                 "progress_percent": None,
@@ -160,38 +153,16 @@ class WateringHubCoordinator:
                 "error_message": None,
             }
 
-        total_seconds = self._valves_total * 60 if self._valves_total else 1
-        done_seconds = self._valves_done * 60
-        progress = int((done_seconds / total_seconds) * 100) if total_seconds else 0
-
-        sequence = [
-            {
-                **entry,
-                "status": (
-                    "done"
-                    if i < self._valves_done
-                    else "running"
-                    if i == self._valves_done
-                    else "pending"
-                ),
-            }
-            for i, entry in enumerate(self._valves_sequence)
-        ]
+        total = self._valves_total if self._valves_total else 1
+        progress = int((self._valves_done / total) * 100)
 
         return {
             "current_program": self._current_program,
-            "current_zone": self._current_zone,
-            "current_zone_name": self._current_zone_name,
-            "current_valve": self._current_valve,
-            "current_valve_name": self._current_valve_name,
-            "current_valve_start": (
-                self._current_valve_start.isoformat() if self._current_valve_start else None
-            ),
-            "current_valve_duration": self._current_valve_duration,
+            "active_valves": list(self._active_valves),
             "valves_done": self._valves_done,
             "valves_total": self._valves_total,
             "progress_percent": progress,
-            "valves_sequence": sequence,
+            "valves_sequence": list(self._valves_sequence),
             "dry_run": self._dry_run,
             "error_message": None,
         }
@@ -223,6 +194,11 @@ class WateringHubCoordinator:
         for valve_data in valves:
             entity_id = valve_data["entity_id"]
             name = valve_data["name"]
+            water_supply_id = valve_data["water_supply_id"]
+            if water_supply_id not in self._water_supplies:
+                raise ValueError(
+                    f"Unknown water supply '{water_supply_id}' for valve '{entity_id}'"
+                )
 
             if entity_id in existing_by_entity:
                 vid = existing_by_entity[entity_id]["id"]
@@ -234,7 +210,12 @@ class WateringHubCoordinator:
                     vid = f"{base_vid}_{counter}"
                     counter += 1
 
-            new_valves[vid] = {"id": vid, "name": name, "entity_id": entity_id}
+            new_valves[vid] = {
+                "id": vid,
+                "name": name,
+                "entity_id": entity_id,
+                "water_supply_id": water_supply_id,
+            }
 
         self._valves = new_valves
         await self._async_save()
@@ -287,6 +268,41 @@ class WateringHubCoordinator:
         await self._async_save()
         self._notify_listeners()
         _LOGGER.info("Zone '%s' deleted", zone_id)
+
+    # --- CRUD: Water Supplies ---
+
+    async def async_create_water_supply(self, ws_id: str, name: str) -> None:
+        """Create a new water supply."""
+        if ws_id in self._water_supplies:
+            raise ValueError(f"Water supply '{ws_id}' already exists")
+        self._water_supplies[ws_id] = {"id": ws_id, "name": name}
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Water supply '%s' created", ws_id)
+
+    async def async_update_water_supply(self, ws_id: str, name: str | None = None) -> None:
+        """Update an existing water supply."""
+        if ws_id not in self._water_supplies:
+            raise ValueError(f"Water supply '{ws_id}' not found")
+        if name is not None:
+            self._water_supplies[ws_id]["name"] = name
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Water supply '%s' updated", ws_id)
+
+    async def async_delete_water_supply(self, ws_id: str) -> None:
+        """Delete a water supply. Refuses if any valve references it."""
+        if ws_id not in self._water_supplies:
+            raise ValueError(f"Water supply '{ws_id}' not found")
+        for valve in self._valves.values():
+            if valve.get("water_supply_id") == ws_id:
+                raise ValueError(
+                    f"Cannot delete water supply '{ws_id}': used by valve '{valve['id']}'"
+                )
+        del self._water_supplies[ws_id]
+        await self._async_save()
+        self._notify_listeners()
+        _LOGGER.info("Water supply '%s' deleted", ws_id)
 
     # --- CRUD: Programs ---
 
@@ -403,7 +419,7 @@ class WateringHubCoordinator:
         """Resolve a program's zones and valves into full details with names."""
         program = self._programs.get(program_id, {})
         zones = []
-        total_duration = 0
+        supply_durations: dict[str, int] = {}
 
         for zone_ref in program.get("zones", []):
             zone = self._zones.get(zone_ref["zone_id"])
@@ -422,7 +438,10 @@ class WateringHubCoordinator:
                 if "frequency" in valve_ref:
                     valve_detail["frequency"] = valve_ref["frequency"]
                 valves.append(valve_detail)
-                total_duration += valve_ref["duration"]
+                supply_id = valve.get("water_supply_id", "")
+                supply_durations[supply_id] = (
+                    supply_durations.get(supply_id, 0) + valve_ref["duration"]
+                )
             zones.append(
                 {
                     "zone_id": zone_ref["zone_id"],
@@ -430,6 +449,8 @@ class WateringHubCoordinator:
                     "valves": valves,
                 }
             )
+
+        total_duration = max(supply_durations.values()) if supply_durations else 0
 
         return {
             "program_id": program_id,
@@ -478,6 +499,7 @@ class WateringHubCoordinator:
         self._cancel_event.set()
         dry_run = self._dry_run
         self._running_program = None
+        self._active_valves = []
 
         # Only reset to idle if not in error state
         if self._status != "error":
@@ -644,12 +666,22 @@ class WateringHubCoordinator:
                         "zone_id": zone_ref["zone_id"],
                         "zone_name": zone_name,
                         "duration": valve_ref["duration"] * 60,
+                        "water_supply_id": valve["water_supply_id"] if valve else None,
+                        "status": "pending",
                     }
                 )
         return sequence
 
+    @staticmethod
+    def _group_by_supply(sequence: list[dict]) -> dict[str, list[dict]]:
+        """Group valve sequence entries by water_supply_id, preserving order."""
+        groups: dict[str, list[dict]] = {}
+        for entry in sequence:
+            groups.setdefault(entry["water_supply_id"], []).append(entry)
+        return groups
+
     async def async_run_program(self, program_id: str) -> None:
-        """Execute a program: run each zone's valves sequentially."""
+        """Execute a program: run supply pipelines in parallel."""
         async with self._run_lock:
             if self._running_program:
                 _LOGGER.warning("Program execution already in progress, skipping")
@@ -680,6 +712,7 @@ class WateringHubCoordinator:
             self._valves_done = 0
             self._valves_total = len(sequence)
             self._valves_sequence = sequence
+            self._active_valves = []
             self._notify_listeners()
 
             self.hass.bus.async_fire(
@@ -687,38 +720,19 @@ class WateringHubCoordinator:
                 {"action": "program_started", "program": program_id},
             )
 
-            # Build a set of eligible valve IDs for fast lookup
-            eligible_valve_ids = {entry["valve_id"] for entry in sequence}
-
             try:
-                for zone_ref in program["zones"]:
-                    zone = self._zones.get(zone_ref["zone_id"])
-                    if not zone:
-                        _LOGGER.warning("Zone '%s' not found, skipping", zone_ref["zone_id"])
-                        continue
+                # Group by supply and run pipelines concurrently
+                supply_groups = self._group_by_supply(sequence)
+                tasks = [
+                    self._async_run_pipeline(supply_id, entries)
+                    for supply_id, entries in supply_groups.items()
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    self._current_zone = zone_ref["zone_id"]
-                    self._current_zone_name = zone["name"]
-
-                    for valve_ref in zone_ref.get("valves", []):
-                        if valve_ref["valve_id"] not in eligible_valve_ids:
-                            continue
-
-                        if self._cancel_event.is_set():
-                            _LOGGER.info("Execution cancelled")
-                            return
-
-                        valve = self._valves.get(valve_ref["valve_id"])
-                        if not valve:
-                            _LOGGER.warning(
-                                "Valve '%s' not found, skipping",
-                                valve_ref["valve_id"],
-                            )
-                            continue
-
-                        await self._async_run_valve(valve, valve_ref["duration"])
-                        self._valves_done += 1
-                        self._notify_listeners()
+                # Check for errors in any pipeline
+                errors = [r for r in results if isinstance(r, Exception)]
+                if errors:
+                    raise errors[0]
 
                 self._status = "idle"
                 self._last_run = dt_util.now()
@@ -762,29 +776,53 @@ class WateringHubCoordinator:
                 self._running_program = None
                 if self._status != "error":
                     self._current_program = None
-                self._current_zone = None
-                self._current_zone_name = None
-                self._current_valve = None
-                self._current_valve_name = None
-                self._current_valve_start = None
-                self._current_valve_duration = 0
+                self._active_valves = []
                 self._valves_done = 0
                 self._valves_total = 0
                 self._valves_sequence = []
                 self._dry_run = False
                 self._notify_listeners()
 
-    async def _async_run_valve(self, valve: dict, duration_minutes: int) -> None:
+    async def _async_run_pipeline(self, supply_id: str, entries: list[dict]) -> None:
+        """Run a single supply pipeline: its valves sequentially."""
+        try:
+            for entry in entries:
+                if self._cancel_event.is_set():
+                    _LOGGER.info("Pipeline '%s' cancelled", supply_id)
+                    return
+
+                valve = self._valves.get(entry["valve_id"])
+                if not valve:
+                    _LOGGER.warning("Valve '%s' not found, skipping", entry["valve_id"])
+                    continue
+
+                await self._async_run_valve(valve, entry["duration"] // 60, entry)
+                self._valves_done += 1
+                entry["status"] = "done"
+                self._notify_listeners()
+        except Exception:
+            self._cancel_event.set()
+            raise
+
+    async def _async_run_valve(self, valve: dict, duration_minutes: int, entry: dict) -> None:
         """Open a valve, wait for duration, close it."""
         entity_id = valve["entity_id"]
         valve_id = valve["id"]
         duration_seconds = duration_minutes * 60
         dry_run = self._dry_run
 
-        self._current_valve = valve_id
-        self._current_valve_name = valve["name"]
-        self._current_valve_duration = duration_seconds
-        self._current_valve_start = dt_util.now()
+        # Mark running in sequence + add to active_valves
+        start_time = dt_util.now()
+        entry["status"] = "running"
+        entry["start"] = start_time.isoformat()
+        active_entry = {
+            "water_supply_id": entry.get("water_supply_id"),
+            "valve_id": valve_id,
+            "valve_name": valve["name"],
+            "valve_start": start_time.isoformat(),
+            "valve_duration": duration_seconds,
+        }
+        self._active_valves.append(active_entry)
         self._notify_listeners()
 
         _LOGGER.info(
@@ -801,6 +839,7 @@ class WateringHubCoordinator:
                 "valve": valve_id,
                 "duration": duration_seconds,
                 "dry_run": dry_run,
+                "water_supply_id": entry.get("water_supply_id"),
             },
         )
 
@@ -826,6 +865,10 @@ class WateringHubCoordinator:
                 blocking=True,
             )
 
+        # Remove from active_valves
+        if active_entry in self._active_valves:
+            self._active_valves.remove(active_entry)
+
         self.hass.bus.async_fire(
             EVENT_TYPE,
             {"action": "valve_closed", "valve": valve_id, "dry_run": dry_run},
@@ -837,6 +880,6 @@ class WateringHubCoordinator:
             valve_id,
         )
 
-        # Pause between valves
+        # Pause between valves within the same pipeline
         if not self._cancel_event.is_set():
             await asyncio.sleep(VALVE_PAUSE_SECONDS)
