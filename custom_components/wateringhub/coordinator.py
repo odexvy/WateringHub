@@ -158,11 +158,11 @@ class WateringHubCoordinator:
 
         return {
             "current_program": self._current_program,
-            "active_valves": list(self._active_valves),
+            "active_valves": [dict(e) for e in self._active_valves],
             "valves_done": self._valves_done,
             "valves_total": self._valves_total,
             "progress_percent": progress,
-            "valves_sequence": list(self._valves_sequence),
+            "valves_sequence": [dict(e) for e in self._valves_sequence],
             "dry_run": self._dry_run,
             "error_message": None,
         }
