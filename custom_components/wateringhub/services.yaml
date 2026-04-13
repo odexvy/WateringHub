@@ -1,10 +1,10 @@
 set_valves:
   name: Set Valves
-  description: "Replace the entire valve list. Each valve requires entity_id, name, and water_supply_id."
+  description: "Replace the entire valve list. Each valve requires entity_id and name. Optional: water_supply_id, zone_id."
   fields:
     valves:
       name: Valves
-      description: "List of valves with entity_id (HA switch entity), name, and water_supply_id."
+      description: "List of valves with entity_id, name, and optional water_supply_id and zone_id."
       required: true
 
 stop_all:
@@ -13,7 +13,7 @@ stop_all:
 
 create_zone:
   name: Create Zone
-  description: Create a new zone grouping valves together.
+  description: Create a new zone.
   fields:
     id:
       name: Zone ID
@@ -29,11 +29,6 @@ create_zone:
       example: "Jardin complet"
       selector:
         text:
-    valves:
-      name: Valves
-      description: List of valve IDs belonging to this zone.
-      required: true
-      example: "[cedre, terrasse]"
 
 update_zone:
   name: Update Zone
@@ -50,9 +45,6 @@ update_zone:
       description: New display name.
       selector:
         text:
-    valves:
-      name: Valves
-      description: New list of valve IDs.
 
 delete_zone:
   name: Delete Zone
@@ -102,7 +94,7 @@ update_water_supply:
 
 delete_water_supply:
   name: Delete Water Supply
-  description: Delete a water supply. Fails if any valve references it.
+  description: Delete a water supply. Valves referencing it are set to null.
   fields:
     id:
       name: Water Supply ID
