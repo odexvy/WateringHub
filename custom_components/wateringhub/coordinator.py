@@ -194,14 +194,14 @@ class WateringHubCoordinator:
         for valve_data in valves:
             entity_id = valve_data["entity_id"]
             name = valve_data["name"]
-            water_supply_id = valve_data["water_supply_id"]
-            zone_id = valve_data["zone_id"]
+            water_supply_id = valve_data.get("water_supply_id")
+            zone_id = valve_data.get("zone_id")
 
-            if water_supply_id not in self._water_supplies:
+            if water_supply_id is not None and water_supply_id not in self._water_supplies:
                 raise ValueError(
                     f"Unknown water supply '{water_supply_id}' for valve '{entity_id}'"
                 )
-            if zone_id not in self._zones:
+            if zone_id is not None and zone_id not in self._zones:
                 raise ValueError(f"Unknown zone '{zone_id}' for valve '{entity_id}'")
 
             if entity_id in existing_by_entity:
@@ -249,12 +249,12 @@ class WateringHubCoordinator:
         _LOGGER.info("Zone '%s' updated", zone_id)
 
     async def async_delete_zone(self, zone_id: str) -> None:
-        """Delete a zone. Refuses if any valve references it."""
+        """Delete a zone. Clears zone_id on valves that referenced it."""
         if zone_id not in self._zones:
             raise ValueError(f"Zone '{zone_id}' not found")
         for valve in self._valves.values():
             if valve.get("zone_id") == zone_id:
-                raise ValueError(f"Cannot delete zone '{zone_id}': used by valve '{valve['id']}'")
+                valve["zone_id"] = None
         del self._zones[zone_id]
         await self._async_save()
         self._notify_listeners()
@@ -282,14 +282,12 @@ class WateringHubCoordinator:
         _LOGGER.info("Water supply '%s' updated", ws_id)
 
     async def async_delete_water_supply(self, ws_id: str) -> None:
-        """Delete a water supply. Refuses if any valve references it."""
+        """Delete a water supply. Clears water_supply_id on valves that referenced it."""
         if ws_id not in self._water_supplies:
             raise ValueError(f"Water supply '{ws_id}' not found")
         for valve in self._valves.values():
             if valve.get("water_supply_id") == ws_id:
-                raise ValueError(
-                    f"Cannot delete water supply '{ws_id}': used by valve '{valve['id']}'"
-                )
+                valve["water_supply_id"] = None
         del self._water_supplies[ws_id]
         await self._async_save()
         self._notify_listeners()

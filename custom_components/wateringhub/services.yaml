@@ -1,10 +1,10 @@
 set_valves:
   name: Set Valves
-  description: "Replace the entire valve list. Each valve requires entity_id, name, water_supply_id, and zone_id."
+  description: "Replace the entire valve list. Each valve requires entity_id and name. Optional: water_supply_id, zone_id."
   fields:
     valves:
       name: Valves
-      description: "List of valves with entity_id, name, water_supply_id, and zone_id."
+      description: "List of valves with entity_id, name, and optional water_supply_id and zone_id."
       required: true
 
 stop_all:
@@ -48,7 +48,7 @@ update_zone:
 
 delete_zone:
   name: Delete Zone
-  description: Delete a zone. Fails if any valve is assigned to it.
+  description: Delete a zone. Clears zone_id on valves that referenced it.
   fields:
     id:
       name: Zone ID
@@ -94,7 +94,7 @@ update_water_supply:
 
 delete_water_supply:
   name: Delete Water Supply
-  description: Delete a water supply. Fails if any valve is assigned to it.
+  description: Delete a water supply. Clears water_supply_id on valves that referenced it.
   fields:
     id:
       name: Water Supply ID

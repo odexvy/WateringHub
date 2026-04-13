@@ -62,7 +62,7 @@ data:
       water_supply_id: main_supply
 ```
 
-`zone_id` and `water_supply_id` are required — create zones and water supplies first.
+`zone_id` and `water_supply_id` are optional (null or omitted = unassigned).
 
 Then create zones, water supplies, and programs from the [WateringHub Card](https://github.com/odexvy/WateringHubCard) or via services.
 
@@ -82,7 +82,7 @@ Switch entities are created/removed dynamically when programs are added/deleted.
 The `sensor.wateringhub_status` sensor exposes additional attributes depending on its state:
 
 **Always available:**
-- `available_valves` — list of configured valves (each with required `zone_id`, `water_supply_id`)
+- `available_valves` — list of configured valves (each with optional `zone_id`, `water_supply_id`)
 - `zones` — list of zones (name only)
 - `water_supplies` — list of water supply sources
 
@@ -111,14 +111,14 @@ The program triggers every day at its scheduled time. Valves whose frequency doe
 
 | Service | Description |
 |---------|-------------|
-| `wateringhub.set_valves` | Replace the entire valve list (entity_id, name, zone_id, water_supply_id) |
+| `wateringhub.set_valves` | Replace the entire valve list (entity_id, name, optional zone_id + water_supply_id) |
 | `wateringhub.stop_all` | Close all valves immediately, cancel running program |
 | `wateringhub.create_zone` | Create a zone (id, name) |
 | `wateringhub.update_zone` | Update a zone name |
-| `wateringhub.delete_zone` | Delete a zone (fails if valves are assigned) |
+| `wateringhub.delete_zone` | Delete a zone (clears zone_id on referencing valves) |
 | `wateringhub.create_water_supply` | Create a water supply source (id, name) |
 | `wateringhub.update_water_supply` | Update a water supply name |
-| `wateringhub.delete_water_supply` | Delete a water supply (fails if valves are assigned) |
+| `wateringhub.delete_water_supply` | Delete a water supply (clears water_supply_id on referencing valves) |
 | `wateringhub.create_program` | Create a program (id, name, schedule, zones with durations, dry_run) |
 | `wateringhub.update_program` | Update a program (name, schedule, zones, dry_run) |
 | `wateringhub.delete_program` | Delete a program and its switch entity |
