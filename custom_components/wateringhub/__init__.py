@@ -22,7 +22,6 @@ CREATE_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Required("valves"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -30,7 +29,6 @@ UPDATE_ZONE_SCHEMA = vol.Schema(
     {
         vol.Required("id"): cv.string,
         vol.Optional("name"): cv.string,
-        vol.Optional("valves"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 
@@ -128,7 +126,8 @@ SET_VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Required("water_supply_id"): cv.string,
+        vol.Optional("water_supply_id"): vol.Any(cv.string, None),
+        vol.Optional("zone_id"): vol.Any(cv.string, None),
     }
 )
 
@@ -159,14 +158,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await coordinator.async_create_zone(
             call.data["id"],
             call.data["name"],
-            call.data["valves"],
         )
 
     async def handle_update_zone(call: ServiceCall) -> None:
         await coordinator.async_update_zone(
             call.data["id"],
             name=call.data.get("name"),
-            valves=call.data.get("valves"),
         )
 
     async def handle_delete_zone(call: ServiceCall) -> None:

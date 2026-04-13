@@ -19,10 +19,12 @@ Works with any switch entity: GPIO relays, Zigbee, ESPHome, Shelly, etc.
 
 ## Features
 
-- **No YAML** — setup via UI, valves/zones/programs via services
+- **No YAML** — setup via UI, valves/zones/programs/water supplies via services
+- **Water supplies** — assign valves to water supply sources; valves on different supplies run in parallel
 - **Per-valve frequency** — each valve runs daily, every N days, or on specific weekdays
-- **Real-time tracking** — progress bars, valve sequence with done/running/pending status
+- **Real-time tracking** — progress bars, valve sequence with done/running/pending status, multiple active valves
 - **Dry run mode** — simulate full execution without commanding physical valves
+- **Skip program** — suspend a program for N days without disabling it
 - **Strict mutex** — only one program active at a time
 - **Persistent state** — survives HA restarts
 - **Error handling** — auto-stop + persistent notification on failure
@@ -52,11 +54,17 @@ data:
   valves:
     - entity_id: switch.relay_1
       name: Lawn
+      zone_id: front_yard
+      water_supply_id: main_supply
     - entity_id: switch.relay_2
       name: Flower beds
+      zone_id: front_yard
+      water_supply_id: null
 ```
 
-Then create zones and programs from the [WateringHub Card](https://github.com/odexvy/WateringHubCard) or via services.
+`zone_id` and `water_supply_id` are optional (null or omitted = unassigned).
+
+Then create zones, water supplies, and programs from the [WateringHub Card](https://github.com/odexvy/WateringHubCard) or via services.
 
 ## Entities
 
@@ -74,15 +82,16 @@ Switch entities are created/removed dynamically when programs are added/deleted.
 The `sensor.wateringhub_status` sensor exposes additional attributes depending on its state:
 
 **Always available:**
-- `available_valves` — list of configured valves
-- `zones` — list of configured zones
+- `available_valves` — list of configured valves (each with `zone_id`, `water_supply_id`)
+- `zones` — list of zones (name only)
+- `water_supplies` — list of water supply sources
 
 **When running:**
-- `current_program`, `current_zone`, `current_zone_name`
-- `current_valve`, `current_valve_name`, `current_valve_start`, `current_valve_duration`
+- `current_program` — active program ID
+- `active_valves` — list of currently open valves (one per water supply, running in parallel)
 - `valves_done`, `valves_total`, `progress_percent`
 - `dry_run` — `true` if the running program is in dry run mode
-- `valves_sequence` — ordered list of today's eligible valves with `status: done/running/pending`
+- `valves_sequence` — ordered list of today's eligible valves with `status: done/running/pending` and `water_supply_id`
 
 **When error:**
 - `current_program`, `error_message`
@@ -102,14 +111,18 @@ The program triggers every day at its scheduled time. Valves whose frequency doe
 
 | Service | Description |
 |---------|-------------|
-| `wateringhub.set_valves` | Replace the entire valve list (entity_id + name per valve) |
+| `wateringhub.set_valves` | Replace the entire valve list (entity_id, name, optional zone_id + water_supply_id) |
 | `wateringhub.stop_all` | Close all valves immediately, cancel running program |
-| `wateringhub.create_zone` | Create a zone (id, name, valve list) |
-| `wateringhub.update_zone` | Update a zone |
-| `wateringhub.delete_zone` | Delete a zone (fails if used by a program) |
+| `wateringhub.create_zone` | Create a zone (id, name) |
+| `wateringhub.update_zone` | Update a zone name |
+| `wateringhub.delete_zone` | Delete a zone (clears zone_id on referencing valves) |
+| `wateringhub.create_water_supply` | Create a water supply source (id, name) |
+| `wateringhub.update_water_supply` | Update a water supply name |
+| `wateringhub.delete_water_supply` | Delete a water supply (clears water_supply_id on referencing valves) |
 | `wateringhub.create_program` | Create a program (id, name, schedule, zones with durations, dry_run) |
 | `wateringhub.update_program` | Update a program (name, schedule, zones, dry_run) |
 | `wateringhub.delete_program` | Delete a program and its switch entity |
+| `wateringhub.skip_program` | Suspend a program for N days without disabling it (0 to cancel) |
 
 <details>
 <summary>Example: create a zone</summary>
@@ -119,10 +132,9 @@ service: wateringhub.create_zone
 data:
   id: jardin
   name: Jardin complet
-  valves:
-    - valve_1
-    - valve_2
 ```
+
+Valve-to-zone assignment is done via `set_valves` (`zone_id` field on each valve).
 </details>
 
 <details>
@@ -159,7 +171,7 @@ All events are fired on `wateringhub_event`:
 | `program_started` | `{ program }` |
 | `program_finished` | `{ program }` |
 | `program_error` | `{ program, error }` |
-| `valve_opened` | `{ valve, duration, dry_run }` |
+| `valve_opened` | `{ valve, duration, dry_run, water_supply_id }` |
 | `valve_closed` | `{ valve, dry_run }` |
 
 ## Development

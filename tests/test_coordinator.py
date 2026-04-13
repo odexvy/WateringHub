@@ -52,7 +52,7 @@ class TestInit:
 
     def test_has_zones(self, coordinator):
         assert "zone_1" in coordinator.zones
-        assert len(coordinator.zones["zone_1"]["valves"]) == 2
+        assert coordinator.zones["zone_1"]["name"] == "Test Zone"
 
     def test_has_programs(self, coordinator):
         assert "prog_a" in coordinator.programs
@@ -204,19 +204,15 @@ class TestCRUDZones:
 
     @pytest.mark.asyncio
     async def test_create_zone(self, coordinator):
-        await coordinator.async_create_zone("zone_2", "New Zone", ["valve_1"])
+        await coordinator.async_create_zone("zone_2", "New Zone")
         assert "zone_2" in coordinator.zones
         assert coordinator.zones["zone_2"]["name"] == "New Zone"
+        assert "valves" not in coordinator.zones["zone_2"]
 
     @pytest.mark.asyncio
     async def test_create_zone_duplicate(self, coordinator):
         with pytest.raises(ValueError, match="already exists"):
-            await coordinator.async_create_zone("zone_1", "Dup", ["valve_1"])
-
-    @pytest.mark.asyncio
-    async def test_create_zone_unknown_valve(self, coordinator):
-        with pytest.raises(ValueError, match="Unknown valve"):
-            await coordinator.async_create_zone("zone_2", "Bad", ["nonexistent"])
+            await coordinator.async_create_zone("zone_1", "Dup")
 
     @pytest.mark.asyncio
     async def test_update_zone(self, coordinator):
@@ -224,15 +220,33 @@ class TestCRUDZones:
         assert coordinator.zones["zone_1"]["name"] == "Renamed"
 
     @pytest.mark.asyncio
-    async def test_delete_zone_in_use(self, coordinator):
-        with pytest.raises(ValueError, match="used by program"):
-            await coordinator.async_delete_zone("zone_1")
+    async def test_update_zone_not_found(self, coordinator):
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.async_update_zone("nonexistent", name="X")
 
     @pytest.mark.asyncio
     async def test_delete_zone(self, coordinator):
-        await coordinator.async_create_zone("zone_unused", "Unused", ["valve_1"])
+        await coordinator.async_create_zone("zone_unused", "Unused")
         await coordinator.async_delete_zone("zone_unused")
         assert "zone_unused" not in coordinator.zones
+
+    @pytest.mark.asyncio
+    async def test_delete_zone_clears_valve_zone_id(self, coordinator):
+        """Deleting a zone sets zone_id to null on valves that referenced it."""
+        await coordinator.async_delete_zone("zone_1")
+        assert "zone_1" not in coordinator.zones
+        assert coordinator.valves["valve_1"]["zone_id"] is None
+        assert coordinator.valves["valve_2"]["zone_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_delete_zone_not_found(self, coordinator):
+        with pytest.raises(ValueError, match="not found"):
+            await coordinator.async_delete_zone("nonexistent")
+
+    @pytest.mark.asyncio
+    async def test_create_zone_persists(self, coordinator):
+        await coordinator.async_create_zone("zone_2", "New")
+        coordinator._store.async_save.assert_called()
 
 
 class TestCRUDPrograms:
@@ -261,6 +275,18 @@ class TestCRUDPrograms:
     async def test_update_program(self, coordinator):
         await coordinator.async_update_program("prog_a", name="Renamed")
         assert coordinator.programs["prog_a"]["name"] == "Renamed"
+
+    @pytest.mark.asyncio
+    async def test_create_program_valve_not_in_zone(self, coordinator):
+        """Valve with different zone_id than referenced zone is rejected."""
+        await coordinator.async_create_zone("zone_2", "Empty Zone")
+        with pytest.raises(ValueError, match="not in zone"):
+            await coordinator.async_create_program(
+                "prog_c",
+                "Program C",
+                {"time": "06:00"},
+                [{"zone_id": "zone_2", "valves": [{"valve_id": "valve_1", "duration": 5}]}],
+            )
 
     @pytest.mark.asyncio
     async def test_delete_program(self, coordinator):
@@ -372,9 +398,11 @@ class TestCRUDWaterSupplies:
         assert "ws_unused" not in coordinator.water_supplies
 
     @pytest.mark.asyncio
-    async def test_delete_water_supply_in_use(self, coordinator):
-        with pytest.raises(ValueError, match="used by valve"):
-            await coordinator.async_delete_water_supply("ws_a")
+    async def test_delete_water_supply_clears_valve_refs(self, coordinator):
+        """Deleting a water supply sets water_supply_id to null on valves that referenced it."""
+        await coordinator.async_delete_water_supply("ws_a")
+        assert "ws_a" not in coordinator.water_supplies
+        assert coordinator.valves["valve_1"]["water_supply_id"] is None
 
     @pytest.mark.asyncio
     async def test_delete_water_supply_not_found(self, coordinator):
@@ -387,25 +415,58 @@ class TestCRUDWaterSupplies:
         coordinator._store.async_save.assert_called()
 
 
-class TestSetValvesWaterSupply:
-    """Test set_valves with water_supply_id."""
+class TestSetValves:
+    """Test set_valves with zone_id and water_supply_id."""
 
     @pytest.mark.asyncio
-    async def test_set_valves_with_valid_water_supply(self, coordinator):
+    async def test_set_valves_with_zone_and_supply(self, coordinator):
         await coordinator.async_set_valves(
             [
                 {
                     "entity_id": "switch.test_valve_1",
                     "name": "Valve 1",
                     "water_supply_id": "ws_a",
+                    "zone_id": "zone_1",
                 },
             ]
         )
         valve = next(iter(coordinator.valves.values()))
         assert valve["water_supply_id"] == "ws_a"
+        assert valve["zone_id"] == "zone_1"
 
     @pytest.mark.asyncio
-    async def test_set_valves_with_invalid_water_supply(self, coordinator):
+    async def test_set_valves_null_zone_and_supply(self, coordinator):
+        await coordinator.async_set_valves(
+            [
+                {
+                    "entity_id": "switch.test_valve_1",
+                    "name": "Valve 1",
+                    "water_supply_id": None,
+                    "zone_id": None,
+                },
+            ]
+        )
+        valve = next(iter(coordinator.valves.values()))
+        assert valve["water_supply_id"] is None
+        assert valve["zone_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_set_valves_absent_optional_fields(self, coordinator):
+        """Omitted zone_id/water_supply_id default to None."""
+        await coordinator.async_set_valves(
+            [
+                {
+                    "entity_id": "switch.test_valve_1",
+                    "name": "Valve 1",
+                },
+            ]
+        )
+        valve = next(iter(coordinator.valves.values()))
+        assert valve["water_supply_id"] is None
+        assert valve["zone_id"] is None
+
+    @pytest.mark.asyncio
+    async def test_set_valves_invalid_water_supply(self, coordinator):
         with pytest.raises(ValueError, match="Unknown water supply"):
             await coordinator.async_set_valves(
                 [
@@ -418,19 +479,31 @@ class TestSetValvesWaterSupply:
             )
 
     @pytest.mark.asyncio
-    async def test_set_valves_persists_water_supply_id(self, coordinator):
+    async def test_set_valves_invalid_zone(self, coordinator):
+        with pytest.raises(ValueError, match="Unknown zone"):
+            await coordinator.async_set_valves(
+                [
+                    {
+                        "entity_id": "switch.test_valve_1",
+                        "name": "Valve 1",
+                        "zone_id": "nonexistent",
+                    },
+                ]
+            )
+
+    @pytest.mark.asyncio
+    async def test_set_valves_persists(self, coordinator):
         await coordinator.async_set_valves(
             [
                 {
                     "entity_id": "switch.test_valve_1",
                     "name": "Valve 1",
                     "water_supply_id": "ws_b",
+                    "zone_id": "zone_1",
                 },
             ]
         )
         coordinator._store.async_save.assert_called()
-        valve = next(iter(coordinator.valves.values()))
-        assert valve["water_supply_id"] == "ws_b"
 
 
 class TestParallelExecution:

@@ -9,19 +9,21 @@ import pytest
 
 @pytest.fixture
 def sample_valves():
-    """Return valve config as parsed from YAML."""
+    """Return valve config as stored in .storage."""
     return {
         "valve_1": {
             "id": "valve_1",
             "name": "Test Valve 1",
             "entity_id": "switch.test_valve_1",
             "water_supply_id": "ws_a",
+            "zone_id": "zone_1",
         },
         "valve_2": {
             "id": "valve_2",
             "name": "Test Valve 2",
             "entity_id": "switch.test_valve_2",
             "water_supply_id": "ws_b",
+            "zone_id": "zone_1",
         },
     }
 
@@ -42,7 +44,6 @@ def sample_zones():
         {
             "id": "zone_1",
             "name": "Test Zone",
-            "valves": ["valve_1", "valve_2"],
         },
     ]
 

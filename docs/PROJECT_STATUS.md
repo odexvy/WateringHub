@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
-**Date :** 2026-04-07
-**Version :** 0.0.20
+**Date :** 2026-04-13
+**Version :** 0.0.23
 **Branche :** master
 
 ---
@@ -9,23 +9,26 @@
 ## Architecture
 
 ```
-.storage/wateringhub (valves + zones + programs JSON)
+.storage/wateringhub (valves + zones + water_supplies + programs JSON)
         |
         v
    __init__.py ---- config flow + service registration
         |
         v
-   coordinator.py ---- storage, CRUD, mutex, scheduling, execution
+   coordinator.py ---- storage, CRUD, mutex, scheduling, parallel execution
         |
         +--- sensor.py ---- status, next_run, last_run
         +--- switch.py ---- 1 toggle switch per program (dynamic)
 ```
 
 **Principes :**
-- **Valves** = via service `set_valves`, persistance `.storage` (pas de YAML)
+- **Valves** = via service `set_valves`, chaque vanne porte `zone_id` + `water_supply_id` (optionnels)
+- **Zones** = CRUD de noms uniquement, l'assignation vanne→zone est sur la vanne
+- **Water Supplies** = CRUD de noms uniquement, l'assignation vanne→arrivée est sur la vanne
 - **Config flow** = setup via UI HA (Paramètres > Appareils & Services > Ajouter)
-- **Zones + Programs** = CRUD dynamique via services HA, persistance `.storage`
-- **Coordinator** = cerveau central (mutex, scheduler, executor)
+- **Programs** = CRUD dynamique via services HA, persistance `.storage`
+- **Execution** = vannes groupées par arrivée d'eau, pipelines parallèles (1 vanne active par arrivée)
+- **Coordinator** = cerveau central (mutex, scheduler, executor parallèle)
 - **Entities** = switches dynamiques + 3 sensors, listener-driven (pas de polling)
 
 ---
@@ -34,28 +37,32 @@
 
 | Entité                                             | Type   | Description                                                                                                                                      |
 | -------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `switch.wateringhub_<program>`                     | Switch | Toggle on/off par programme (attributs : schedule, zones, total_duration, dry_run)                                                               |
+| `switch.wateringhub_<program>`                     | Switch | Toggle on/off par programme (attributs : schedule, zones, total_duration, dry_run, skip_until)                                                   |
 | `sensor.wateringhub_status`                        | Sensor | Statut global : `idle` / `running` / `error`                                                                                                    |
-| `sensor.wateringhub_status` (attributs permanents) | —      | `available_valves`, `zones`                                                                                                                      |
-| `sensor.wateringhub_status` (attributs running)    | —      | `current_program`, `current_zone_name`, `current_valve_name`, `current_valve_start`, `current_valve_duration`, `valves_done`, `valves_total`, `progress_percent`, `valves_sequence`, `dry_run` |
+| `sensor.wateringhub_status` (attributs permanents) | —      | `available_valves` (avec zone_id, water_supply_id), `zones`, `water_supplies`                                                                    |
+| `sensor.wateringhub_status` (attributs running)    | —      | `current_program`, `active_valves` (N vannes en parallèle), `valves_done`, `valves_total`, `progress_percent`, `valves_sequence` (avec status + water_supply_id), `dry_run` |
 | `sensor.wateringhub_status` (attributs error)      | —      | `current_program`, `error_message`                                                                                                               |
 | `sensor.wateringhub_next_run`                      | Sensor | Prochain arrosage prévu (datetime ISO)                                                                                                           |
 | `sensor.wateringhub_last_run`                      | Sensor | Dernier arrosage (datetime ISO)                                                                                                                  |
 
 ---
 
-## Services (8/8)
+## Services (12/12)
 
-| Service                      | Params                             | Description                                              |
-| ---------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| `wateringhub.set_valves`     | `{ valves: [{ entity_id, name }] }` | Remplacer la liste complète des vannes                   |
-| `wateringhub.stop_all`       | `{}`                               | Arrêt immédiat, fermeture de toutes les vannes           |
-| `wateringhub.create_zone`    | `{ id, name, valves }`             | Créer une zone (groupement de vannes)                    |
-| `wateringhub.update_zone`    | `{ id, name?, valves? }`           | Modifier une zone                                        |
-| `wateringhub.delete_zone`    | `{ id }`                           | Supprimer une zone (refuse si utilisée par un programme) |
-| `wateringhub.create_program` | `{ id, name, schedule, zones, dry_run? }` | Créer un programme avec schedule et durées par vanne     |
-| `wateringhub.update_program` | `{ id, name?, schedule?, zones?, dry_run? }` | Modifier un programme                                    |
-| `wateringhub.delete_program` | `{ id }`                           | Supprimer un programme et son switch entity               |
+| Service                          | Params                                                          | Description                                                      |
+| -------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `wateringhub.set_valves`         | `{ valves: [{ entity_id, name, water_supply_id?, zone_id? }] }` | Remplacer la liste complète des vannes                           |
+| `wateringhub.stop_all`           | `{}`                                                            | Arrêt immédiat, fermeture de toutes les vannes                   |
+| `wateringhub.create_zone`        | `{ id, name }`                                                  | Créer une zone (nom uniquement)                                  |
+| `wateringhub.update_zone`        | `{ id, name? }`                                                 | Modifier le nom d'une zone                                       |
+| `wateringhub.delete_zone`        | `{ id }`                                                        | Supprimer une zone (zone_id des vannes passe à null)             |
+| `wateringhub.create_water_supply`| `{ id, name }`                                                  | Créer une arrivée d'eau                                          |
+| `wateringhub.update_water_supply`| `{ id, name? }`                                                 | Modifier le nom d'une arrivée d'eau                              |
+| `wateringhub.delete_water_supply`| `{ id }`                                                        | Supprimer une arrivée (water_supply_id des vannes passe à null)  |
+| `wateringhub.create_program`     | `{ id, name, schedule, zones, dry_run? }`                       | Créer un programme avec schedule et durées par vanne             |
+| `wateringhub.update_program`     | `{ id, name?, schedule?, zones?, dry_run? }`                    | Modifier un programme                                            |
+| `wateringhub.delete_program`     | `{ id }`                                                        | Supprimer un programme et son switch entity                      |
+| `wateringhub.skip_program`       | `{ id, days }`                                                  | Suspendre un programme N jours (0 pour annuler)                  |
 
 ---
 
@@ -77,18 +84,24 @@ Chaque vanne a sa propre fréquence. Sans `frequency`, la vanne tourne à chaque
 
 À chaque déclenchement, seules les vannes éligibles sont exécutées. Si aucune vanne n'est éligible, le programme ne démarre pas (reste `idle`).
 
+### Skip program
+
+`skip_program { id, days }` suspend un programme sans le désactiver (switch reste ON). `skip_until` est exposé comme attribut du switch. `days: 0` annule le skip. Le skip expire automatiquement.
+
 ---
 
 ## Execution
 
 - **Mutex strict** — 1 seul programme actif à la fois
-- **Séquentiel** — vannes exécutées une par une, zone par zone
-- **Tracking temps réel** — vanne courante, progression, timer, `valves_sequence` (liste ordonnée done/running/pending)
-- **Annulation** — cancel event vérifié chaque seconde
-- **Pause** — 1 seconde entre chaque vanne
+- **Parallèle par arrivée** — vannes groupées par `water_supply_id`, chaque arrivée est un pipeline séquentiel, les pipelines tournent en parallèle (`asyncio.gather`)
+- **`active_valves`** — liste des vannes actuellement ouvertes (1 par arrivée active)
+- **Tracking temps réel** — `valves_sequence` avec status done/running/pending par entrée
+- **`total_duration`** — max(somme par arrivée), pas la somme brute (parallélisme)
+- **Annulation** — cancel event vérifié chaque seconde, propage à tous les pipelines
+- **Pause** — 1 seconde entre chaque vanne (au sein d'un même pipeline)
 - **Error handling** — persistent notification HA + fermeture auto de toutes les vannes
 - **Dry run** — mode simulation : séquence complète sans commander les vannes physiques
-- **Fréquence par vanne** — override optionnel de la fréquence du programme par vanne (every_n_days, weekdays), vannes non éligibles skippées
+- **Fréquence par vanne** — vannes non éligibles exclues de la séquence
 
 ---
 
@@ -96,13 +109,13 @@ Chaque vanne a sa propre fréquence. Sans `frequency`, la vanne tourne à chaque
 
 Tous les events sont émis sur `wateringhub_event` :
 
-| Action             | Data                          |
-| ------------------ | ----------------------------- |
-| `program_started`  | `{ program }`                 |
-| `program_finished` | `{ program }`                 |
-| `program_error`    | `{ program, error }`          |
-| `valve_opened`     | `{ valve, duration, dry_run }` |
-| `valve_closed`     | `{ valve, dry_run }`           |
+| Action             | Data                                           |
+| ------------------ | ---------------------------------------------- |
+| `program_started`  | `{ program }`                                  |
+| `program_finished` | `{ program }`                                  |
+| `program_error`    | `{ program, error }`                           |
+| `valve_opened`     | `{ valve, duration, dry_run, water_supply_id }` |
+| `valve_closed`     | `{ valve, dry_run }`                            |
 
 ---
 
@@ -111,32 +124,28 @@ Tous les events sont émis sur `wateringhub_event` :
 ```
 WateringHub/
 ├── custom_components/wateringhub/
-│   ├── __init__.py      (204 lignes)  Config entry setup, service registration
-│   ├── config_flow.py    (25 lignes)  Config flow (UI setup, single instance)
-│   ├── coordinator.py   (798 lignes)  Storage, CRUD, mutex, scheduling, execution
-│   ├── sensor.py        (107 lignes)  Status, next_run, last_run sensors
-│   ├── switch.py         (98 lignes)  Dynamic program switches
-│   ├── const.py          (11 lignes)  Constants (DOMAIN, EVENT_TYPE, PLATFORMS)
-│   ├── manifest.json                  HACS metadata (config_flow: true)
-│   ├── strings.json                   Config flow UI strings
-│   └── services.yaml                  Service schemas + descriptions
+│   ├── __init__.py       Config entry setup, service registration
+│   ├── config_flow.py    Config flow (UI setup, single instance)
+│   ├── coordinator.py    Storage, CRUD, mutex, scheduling, parallel execution
+│   ├── sensor.py         Status, next_run, last_run sensors
+│   ├── switch.py         Dynamic program switches
+│   ├── const.py          Constants (DOMAIN, EVENT_TYPE, PLATFORMS)
+│   ├── manifest.json     HACS metadata (config_flow: true)
+│   ├── strings.json      Config flow UI strings
+│   └── services.yaml     Service schemas + descriptions
 ├── tests/
-│   ├── conftest.py                    Fixtures (mock hass, coordinator)
-│   ├── test_coordinator.py            Coordinator unit tests (40+ tests)
-│   └── test_validation.py             Config schema tests
-├── docs/
-│   └── PROJECT_STATUS.md             Statut du projet, roadmap, décisions
-├── .github/workflows/ci.yml          CI : ruff + mypy + pytest
-├── .pre-commit-config.yaml            Ruff auto-fix
-├── requirements-dev.txt               Dev dependencies
+│   ├── conftest.py       Fixtures (mock hass, coordinator)
+│   ├── test_coordinator.py  Coordinator unit tests
+│   └── test_validation.py   Config schema tests
+├── .github/workflows/ci.yml  CI : ruff + mypy + pytest
+├── .pre-commit-config.yaml   Ruff auto-fix
+├── requirements-dev.txt      Dev dependencies
 ├── pyproject.toml
 ├── hacs.json
 ├── CLAUDE.md
 ├── README.md
 └── LICENSE
 ```
-
-**Total** : ~1 250 lignes production, ~400 lignes tests
 
 ---
 
@@ -147,7 +156,7 @@ WateringHub/
 | Lint       | `ruff check .`              | Linting Python                   |
 | Format     | `ruff format .`             | Formatage Python                 |
 | Types      | `mypy custom_components/`   | Type checking                    |
-| Tests      | `pytest tests/`             | 40+ tests unitaires              |
+| Tests      | `pytest tests/`             | Tests unitaires                  |
 | Pre-commit | Automatique                 | Ruff auto-fix sur les .py stagés |
 | CI         | Push/PR sur master          | Ruff + Mypy + Pytest             |
 
@@ -155,64 +164,36 @@ WateringHub/
 
 ## Companion Frontend (repo séparé : WateringHubCard)
 
-- `wateringhub-card` : dashboard (status, programmes, running view, error view)
-- `wateringhub-config-card` : gestion (CRUD zones et programmes via services HA)
-
----
-
-## Bugs connus
-
-| #   | Sévérité | Description                                                                         | Fichier                |
-| --- | -------- | ----------------------------------------------------------------------------------- | ---------------------- |
-| 1   | Haute    | `remove_listener()` crash si callback absent (ValueError)                           | `coordinator.py:181`   |
-| 2   | Haute    | `_notify_listeners()` : si un callback crash, les suivants ne sont pas notifiés     | `coordinator.py:183`   |
-| 3   | Haute    | Race condition dans `async_enable_program()` : check `_running_program` sans lock   | `coordinator.py:362`   |
-| 4   | Moyenne  | Services handlers sans error handling (exceptions silencieuses)                     | `__init__.py:138-172`  |
-| 5   | Basse    | `async_load()` sans protection si `.storage` corrompu                               | `coordinator.py:67`    |
-
----
-
-## Code clean à faire
-
-| #   | Description                                                                  | Fichier                              |
-| --- | ---------------------------------------------------------------------------- | ------------------------------------ |
-| 6   | ~~Dead code `flow_sensor`~~ — supprimé avec le YAML config                   | —                                    |
-| 7   | Type hints manquants sur `last_run`, `next_run`, `native_value`, callbacks   | `coordinator.py`, `sensor.py`        |
-| 8   | `except Exception:` trop large (2 occurrences)                               | `__init__.py:200`, `coordinator.py:408` |
-| 9   | `async_run_program()` trop long (~107 lignes), à décomposer                 | `coordinator.py:519-625`             |
-
----
-
-## Tests manquants
-
-- Exécution réelle de programme (actuellement mock)
-- Persistence storage (load/save)
-- Race conditions / concurrence
-- Service handlers
-- Code coverage non tracké en CI
+- `wateringhub-card` : dashboard (status, programmes, running view avec vannes parallèles, error view)
+- `wateringhub-config-card` : gestion (CRUD zones, arrivées d'eau, vannes avec assignation zone+arrivée, programmes)
 
 ---
 
 ## Décisions prises
 
 1. **Valves via service** — les vannes sont gérées via `set_valves`, persistées dans `.storage`. Pas de YAML
-2. **Zones + programmes dynamiques** — CRUD via services HA, persistance `.storage/wateringhub`
-3. **Mutex strict** — 1 seul programme actif, le switch d'un programme désactive les autres
-4. **Listener-driven** — pas de polling, les entities s'abonnent au coordinator
-5. **Switches dynamiques** — 1 switch par programme, créé/supprimé sans restart HA
-6. **Durées par programme** — les zones sont des groupements logiques, les durées sont par vanne par programme
-7. **Pause inter-vannes** — 1 seconde entre chaque vanne (constante `VALVE_PAUSE_SECONDS`)
-8. **Cancel event** — vérification chaque seconde pour annulation réactive
-9. **Error → auto stop** — en cas d'erreur, fermeture auto de toutes les vannes + persistent notification
-10. **Sensors globaux** — status/next_run/last_run sont globaux (pas par programme)
-11. **Recalcul next_run chaque minute** — `_async_time_tick` recalcule à chaque tick
-12. **`valves_sequence` sur le sensor status** — liste ordonnée de toutes les vannes du programme en cours avec `status: done/running/pending`, construite au lancement et mise à jour dynamiquement via `valves_done`
-13. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques, exposé sur switch et sensor status
-14. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement (`{ time: "22:00" }`), il se déclenche tous les jours. La fréquence est gérée par vanne, pas par programme (breaking change v0.0.14)
-15. **Fréquence par vanne** — `frequency` optionnel sur chaque vanne, types `every_n_days` (n min 2, start_date) et `weekdays` (days). Sans frequency = tourne à chaque déclenchement. Vannes non éligibles exclues de `valves_sequence`. Si aucune vanne éligible, le programme ne démarre pas
-16. **`set_valves` service** — remplace la liste complète des vannes, match par `entity_id` pour préserver les IDs existants, persiste dans `.storage`
-17. **Pause inter-vannes réduite** — passée de 5s à 1s
-18. **Config flow** — setup via UI HA (plus de YAML), `async_setup_entry` / `async_unload_entry`, single instance
+2. **Zones = noms uniquement** — l'assignation vanne→zone est sur la vanne (`zone_id`), pas sur la zone
+3. **Water supplies = noms uniquement** — l'assignation vanne→arrivée est sur la vanne (`water_supply_id`)
+4. **Mutex strict** — 1 seul programme actif, le switch d'un programme désactive les autres
+5. **Listener-driven** — pas de polling, les entities s'abonnent au coordinator
+6. **Switches dynamiques** — 1 switch par programme, créé/supprimé sans restart HA
+7. **Durées par programme** — les zones sont des groupements logiques, les durées sont par vanne par programme
+8. **Exécution parallèle par arrivée** — vannes groupées par `water_supply_id`, pipelines concurrents via `asyncio.gather`
+9. **Pause inter-vannes** — 1 seconde entre chaque vanne au sein d'un pipeline (constante `VALVE_PAUSE_SECONDS`)
+10. **Cancel event** — vérification chaque seconde pour annulation réactive, propagé à tous les pipelines
+11. **Error → auto stop** — en cas d'erreur, fermeture auto de toutes les vannes + persistent notification
+12. **Sensors globaux** — status/next_run/last_run sont globaux (pas par programme)
+13. **Recalcul next_run chaque minute** — `_async_time_tick` recalcule à chaque tick
+14. **`active_valves` sur le sensor status** — liste des vannes actuellement ouvertes (remplace l'ancien `current_valve` unique)
+15. **`valves_sequence` sur le sensor status** — liste ordonnée avec `status: done/running/pending` et `water_supply_id`
+16. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques
+17. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement, fréquence gérée par vanne
+18. **Fréquence par vanne** — `frequency` optionnel, types `every_n_days` et `weekdays`. Sans frequency = quotidien
+19. **`set_valves` centralise les assignations** — chaque vanne porte `zone_id` + `water_supply_id` (optionnels, null = non assigné)
+20. **Delete zone/water_supply = clear refs** — suppression nettoie les références sur les vannes au lieu de refuser
+21. **Skip program** — suspension temporaire sans désactiver, auto-clear à l'expiration
+22. **Config flow** — setup via UI HA, single instance
+23. **`total_duration` = max par arrivée** — durée parallèle, pas la somme brute
 
 ---
 
@@ -228,29 +209,43 @@ Mise à jour : HACS affiche "mise à jour disponible" → installer → redémar
 
 ---
 
+## Bugs connus
+
+| #   | Sévérité | Description                                                                         |
+| --- | -------- | ----------------------------------------------------------------------------------- |
+| 1   | Haute    | `remove_listener()` crash si callback absent (ValueError)                           |
+| 2   | Haute    | `_notify_listeners()` : si un callback crash, les suivants ne sont pas notifiés     |
+| 3   | Haute    | Race condition dans `async_enable_program()` : check `_running_program` sans lock   |
+| 4   | Moyenne  | Services handlers sans error handling (exceptions silencieuses)                     |
+| 5   | Basse    | `async_load()` sans protection si `.storage` corrompu                               |
+
+---
+
+## Tests manquants
+
+- Exécution réelle de programme (actuellement mock)
+- Exécution parallèle multi-pipeline end-to-end
+- Persistence storage (load/save)
+- Race conditions / concurrence
+- Service handlers
+- Code coverage non tracké en CI
+
+---
+
 ## Roadmap
 
 ### Court terme (stabilité)
 
-- [ ] Fix bug #1 — `remove_listener()` crash (`.discard()` au lieu de `.remove()`)
-- [ ] Fix bug #2 — `_notify_listeners()` fragile (try/except par callback)
-- [ ] Fix bug #3 — race condition `async_enable_program()` (protéger avec `_run_lock`)
+- [ ] Fix bug #1 — `remove_listener()` crash
+- [ ] Fix bug #2 — `_notify_listeners()` fragile
+- [ ] Fix bug #3 — race condition `async_enable_program()`
 - [ ] Fix bug #4 — error handling dans les service handlers
 - [ ] Fix bug #5 — protection storage corrompu
-- [ ] Code clean #6-9 — dead code, type hints, exceptions, refactoring
-
-### Moyen terme (qualité)
-
-- [ ] Tests exécution réelle de programme
-- [ ] Tests persistence storage
-- [ ] Tests service handlers
-- [ ] Code coverage en CI
 
 ### Features (par priorité suggérée)
 
-- [ ] **Run Once** — service `run_program` pour lancer un programme sans l'activer (bouton "Run now")
-- [ ] **Rain Delay** — service `rain_delay` + intégration weather entity HA pour skip automatique
-- [ ] **Flow Sensor** — lecture du `flow_sensor` pendant l'exécution, calcul consommation (litres)
-- [ ] **Historique** — log des exécutions passées, persisté dans `.storage`
-- [ ] **Notifications avancées** — début/fin configurable, alerte si pas tourné depuis X jours
+- [ ] **Run Once** — service `run_program` pour lancer un programme sans l'activer
+- [ ] **Rain Delay** — intégration weather entity HA pour skip automatique
+- [ ] **Flow Sensor** — lecture du débit pendant l'exécution, calcul consommation
+- [ ] **Historique** — log des exécutions passées
 - [ ] **Multi-programme** — plusieurs programmes actifs avec scheduler + queue d'exécution

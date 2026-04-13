@@ -16,15 +16,18 @@ Domain: `wateringhub`.
 
 ## Architecture
 
-- **Valves** = YAML only (`configuration.yaml`), physical hardware config
-- **Zones + Programs** = managed via HA services, persisted in `.storage/wateringhub`
+- **Valves** = managed via `set_valves` service, each valve carries optional `zone_id` + `water_supply_id`
+- **Zones** = name-only CRUD (valve→zone assignment is on the valve via `zone_id`)
+- **Water Supplies** = name-only CRUD (valve→supply assignment is on the valve via `water_supply_id`)
+- **Programs** = CRUD via services, reference zones+valves with per-valve durations/frequency
 - **Schedule** = program defines trigger time only, frequency is per valve (every_n_days, weekdays, or daily by default)
-- **Coordinator** = central logic (mutex, scheduling, execution, CRUD, storage)
+- **Execution** = valves grouped by water supply run in parallel (different supplies concurrent, same supply sequential)
+- **Coordinator** = central logic (mutex, scheduling, parallel execution, CRUD, storage)
 - **Switches** = 1 per program, created/removed dynamically
-- **Sensors** = status (with execution tracking + available_valves + zones), next_run, last_run
+- **Sensors** = status (with execution tracking + available_valves + zones + water_supplies), next_run, last_run
 - **Two Lovelace cards** in separate repo (WateringHubCard):
   - `wateringhub-card` = dashboard (status, programs, execution progress)
-  - `wateringhub-config-card` = management (CRUD zones/programs)
+  - `wateringhub-config-card` = management (CRUD zones/programs/water supplies)
 
 ## Code Standards
 
