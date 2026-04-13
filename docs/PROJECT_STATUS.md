@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-13
-**Version :** 0.0.23
+**Version :** 0.0.24
 **Branche :** master
 
 ---
@@ -51,14 +51,14 @@
 
 | Service                          | Params                                                          | Description                                                      |
 | -------------------------------- | --------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `wateringhub.set_valves`         | `{ valves: [{ entity_id, name, water_supply_id?, zone_id? }] }` | Remplacer la liste complète des vannes                           |
+| `wateringhub.set_valves`         | `{ valves: [{ entity_id, name, water_supply_id, zone_id }] }` | Remplacer la liste complète des vannes                           |
 | `wateringhub.stop_all`           | `{}`                                                            | Arrêt immédiat, fermeture de toutes les vannes                   |
 | `wateringhub.create_zone`        | `{ id, name }`                                                  | Créer une zone (nom uniquement)                                  |
 | `wateringhub.update_zone`        | `{ id, name? }`                                                 | Modifier le nom d'une zone                                       |
-| `wateringhub.delete_zone`        | `{ id }`                                                        | Supprimer une zone (zone_id des vannes passe à null)             |
+| `wateringhub.delete_zone`        | `{ id }`                                                        | Supprimer une zone (refuse si vannes assignées)                  |
 | `wateringhub.create_water_supply`| `{ id, name }`                                                  | Créer une arrivée d'eau                                          |
 | `wateringhub.update_water_supply`| `{ id, name? }`                                                 | Modifier le nom d'une arrivée d'eau                              |
-| `wateringhub.delete_water_supply`| `{ id }`                                                        | Supprimer une arrivée (water_supply_id des vannes passe à null)  |
+| `wateringhub.delete_water_supply`| `{ id }`                                                        | Supprimer une arrivée (refuse si vannes assignées)               |
 | `wateringhub.create_program`     | `{ id, name, schedule, zones, dry_run? }`                       | Créer un programme avec schedule et durées par vanne             |
 | `wateringhub.update_program`     | `{ id, name?, schedule?, zones?, dry_run? }`                    | Modifier un programme                                            |
 | `wateringhub.delete_program`     | `{ id }`                                                        | Supprimer un programme et son switch entity                      |
@@ -189,8 +189,8 @@ WateringHub/
 16. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques
 17. **Schedule = heure uniquement** — le programme ne définit que l'heure de déclenchement, fréquence gérée par vanne
 18. **Fréquence par vanne** — `frequency` optionnel, types `every_n_days` et `weekdays`. Sans frequency = quotidien
-19. **`set_valves` centralise les assignations** — chaque vanne porte `zone_id` + `water_supply_id` (optionnels, null = non assigné)
-20. **Delete zone/water_supply = clear refs** — suppression nettoie les références sur les vannes au lieu de refuser
+19. **`set_valves` centralise les assignations** — chaque vanne porte `zone_id` + `water_supply_id` (obligatoires)
+20. **Delete zone/water_supply = refuse si vannes assignées** — l'utilisateur doit d'abord réassigner les vannes
 21. **Skip program** — suspension temporaire sans désactiver, auto-clear à l'expiration
 22. **Config flow** — setup via UI HA, single instance
 23. **`total_duration` = max par arrivée** — durée parallèle, pas la somme brute

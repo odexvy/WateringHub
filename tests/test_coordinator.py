@@ -231,12 +231,10 @@ class TestCRUDZones:
         assert "zone_unused" not in coordinator.zones
 
     @pytest.mark.asyncio
-    async def test_delete_zone_clears_valve_zone_id(self, coordinator):
-        """Deleting a zone sets zone_id to null on valves that referenced it."""
-        await coordinator.async_delete_zone("zone_1")
-        assert "zone_1" not in coordinator.zones
-        assert coordinator.valves["valve_1"]["zone_id"] is None
-        assert coordinator.valves["valve_2"]["zone_id"] is None
+    async def test_delete_zone_in_use(self, coordinator):
+        """Deleting a zone with assigned valves raises ValueError."""
+        with pytest.raises(ValueError, match="used by valve"):
+            await coordinator.async_delete_zone("zone_1")
 
     @pytest.mark.asyncio
     async def test_delete_zone_not_found(self, coordinator):
@@ -398,11 +396,10 @@ class TestCRUDWaterSupplies:
         assert "ws_unused" not in coordinator.water_supplies
 
     @pytest.mark.asyncio
-    async def test_delete_water_supply_clears_valve_refs(self, coordinator):
-        """Deleting a water supply sets water_supply_id to null on valves that referenced it."""
-        await coordinator.async_delete_water_supply("ws_a")
-        assert "ws_a" not in coordinator.water_supplies
-        assert coordinator.valves["valve_1"]["water_supply_id"] is None
+    async def test_delete_water_supply_in_use(self, coordinator):
+        """Deleting a water supply with assigned valves raises ValueError."""
+        with pytest.raises(ValueError, match="used by valve"):
+            await coordinator.async_delete_water_supply("ws_a")
 
     @pytest.mark.asyncio
     async def test_delete_water_supply_not_found(self, coordinator):
@@ -435,35 +432,32 @@ class TestSetValves:
         assert valve["zone_id"] == "zone_1"
 
     @pytest.mark.asyncio
-    async def test_set_valves_null_zone_and_supply(self, coordinator):
-        await coordinator.async_set_valves(
-            [
-                {
-                    "entity_id": "switch.test_valve_1",
-                    "name": "Valve 1",
-                    "water_supply_id": None,
-                    "zone_id": None,
-                },
-            ]
-        )
-        valve = next(iter(coordinator.valves.values()))
-        assert valve["water_supply_id"] is None
-        assert valve["zone_id"] is None
+    async def test_set_valves_missing_zone_id(self, coordinator):
+        """Missing zone_id raises KeyError."""
+        with pytest.raises(KeyError):
+            await coordinator.async_set_valves(
+                [
+                    {
+                        "entity_id": "switch.test_valve_1",
+                        "name": "Valve 1",
+                        "water_supply_id": "ws_a",
+                    },
+                ]
+            )
 
     @pytest.mark.asyncio
-    async def test_set_valves_absent_optional_fields(self, coordinator):
-        """Omitted zone_id/water_supply_id default to None."""
-        await coordinator.async_set_valves(
-            [
-                {
-                    "entity_id": "switch.test_valve_1",
-                    "name": "Valve 1",
-                },
-            ]
-        )
-        valve = next(iter(coordinator.valves.values()))
-        assert valve["water_supply_id"] is None
-        assert valve["zone_id"] is None
+    async def test_set_valves_missing_water_supply_id(self, coordinator):
+        """Missing water_supply_id raises KeyError."""
+        with pytest.raises(KeyError):
+            await coordinator.async_set_valves(
+                [
+                    {
+                        "entity_id": "switch.test_valve_1",
+                        "name": "Valve 1",
+                        "zone_id": "zone_1",
+                    },
+                ]
+            )
 
     @pytest.mark.asyncio
     async def test_set_valves_invalid_water_supply(self, coordinator):
@@ -474,6 +468,7 @@ class TestSetValves:
                         "entity_id": "switch.test_valve_1",
                         "name": "Valve 1",
                         "water_supply_id": "nonexistent",
+                        "zone_id": "zone_1",
                     },
                 ]
             )
@@ -486,6 +481,7 @@ class TestSetValves:
                     {
                         "entity_id": "switch.test_valve_1",
                         "name": "Valve 1",
+                        "water_supply_id": "ws_a",
                         "zone_id": "nonexistent",
                     },
                 ]

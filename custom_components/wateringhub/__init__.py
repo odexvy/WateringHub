@@ -126,8 +126,8 @@ SET_VALVE_SCHEMA = vol.Schema(
     {
         vol.Required("entity_id"): cv.string,
         vol.Required("name"): cv.string,
-        vol.Optional("water_supply_id"): vol.Any(cv.string, None),
-        vol.Optional("zone_id"): vol.Any(cv.string, None),
+        vol.Required("water_supply_id"): cv.string,
+        vol.Required("zone_id"): cv.string,
     }
 )
 
