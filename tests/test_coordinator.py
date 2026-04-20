@@ -365,6 +365,24 @@ class TestProgramDetails:
         assert details["total_duration"] == 0
         assert details["zones"] == []
 
+    def test_valve_times_echoed_when_set(self, coordinator):
+        """valve_ref.times is echoed sorted in get_program_details output."""
+        coordinator._programs["prog_a"]["zones"][0]["valves"][0]["times"] = [
+            "22:00",
+            "06:00",
+        ]
+        details = coordinator.get_program_details("prog_a")
+        valves = details["zones"][0]["valves"]
+        assert valves[0]["times"] == ["06:00", "22:00"]
+        # Other valve without times override → no times key
+        assert "times" not in valves[1]
+
+    def test_valve_times_omitted_when_absent(self, coordinator):
+        """Valves without times override have no times key in output."""
+        details = coordinator.get_program_details("prog_a")
+        for valve in details["zones"][0]["valves"]:
+            assert "times" not in valve
+
 
 class TestCRUDZones:
     """Test zone CRUD operations."""

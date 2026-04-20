@@ -426,6 +426,8 @@ class WateringHubCoordinator:
                 }
                 if "frequency" in valve_ref:
                     valve_detail["frequency"] = valve_ref["frequency"]
+                if "times" in valve_ref:
+                    valve_detail["times"] = sorted(valve_ref["times"])
                 valves.append(valve_detail)
                 supply_id = valve.get("water_supply_id", "")
                 supply_durations[supply_id] = (
