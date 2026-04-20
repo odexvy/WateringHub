@@ -57,7 +57,7 @@ def sample_programs():
             "name": "Program A",
             "enabled": True,
             "skip_until": None,
-            "schedule": {"time": "22:00"},
+            "schedule": {"times": ["22:00"]},
             "zones": [
                 {
                     "zone_id": "zone_1",
@@ -73,7 +73,7 @@ def sample_programs():
             "name": "Program B",
             "enabled": False,
             "skip_until": None,
-            "schedule": {"time": "08:00"},
+            "schedule": {"times": ["08:00"]},
             "zones": [
                 {
                     "zone_id": "zone_1",

@@ -86,7 +86,7 @@ PROGRAM_ZONE_SCHEMA = vol.Schema(
 )
 
 SCHEDULE_SCHEMA = vol.Schema(
-    {vol.Required("time"): cv.string},
+    {vol.Required("times"): vol.All(cv.ensure_list, [cv.string])},
 )
 
 CREATE_PROGRAM_SCHEMA = vol.Schema(

@@ -1,5 +1,7 @@
 # WateringHub
 
+**Version :** 0.0.27
+
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/odexvy/WateringHub)](https://github.com/odexvy/WateringHub/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -105,7 +107,7 @@ Each valve in a program can have its own frequency. Without `frequency`, the val
 | `every_n_days` | `n` (min 2), `start_date` (ISO, optional) | Every N days from start_date |
 | `weekdays` | `days` (mon, tue, ..., sun) | Specific days of the week |
 
-The program triggers every day at its scheduled time. Valves whose frequency doesn't match today are skipped. If no valve is eligible, the program does not start.
+The program triggers every day at each scheduled time (one or more). Valves whose frequency doesn't match today are skipped. If no valve is eligible, the program does not start.
 
 ## Services
 
@@ -147,7 +149,9 @@ data:
   name: Arrosage quotidien
   dry_run: false
   schedule:
-    time: "22:00"
+    times:
+      - "06:00"
+      - "22:00"
   zones:
     - zone_id: jardin
       valves:

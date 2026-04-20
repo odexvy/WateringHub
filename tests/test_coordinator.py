@@ -155,6 +155,71 @@ class TestNextRun:
         coordinator._recalculate_next_run()
         assert coordinator.next_run is None
 
+    @patch("custom_components.wateringhub.coordinator.dt_util")
+    def test_next_run_multiple_times_picks_earliest_future(self, mock_dt, coordinator):
+        """With times ['06:00', '22:00'] at 20:00, next_run = today 22:00."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        mock_dt.now.return_value = datetime(2026, 3, 29, 20, 0, tzinfo=None)
+        coordinator._recalculate_next_run()
+        assert coordinator.next_run is not None
+        assert coordinator.next_run.hour == 22
+        assert coordinator.next_run.day == 29
+
+    @patch("custom_components.wateringhub.coordinator.dt_util")
+    def test_next_run_multiple_times_wraps_to_tomorrow(self, mock_dt, coordinator):
+        """With times ['06:00', '22:00'] at 23:00, next_run = tomorrow 06:00."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        mock_dt.now.return_value = datetime(2026, 3, 29, 23, 0, tzinfo=None)
+        coordinator._recalculate_next_run()
+        assert coordinator.next_run is not None
+        assert coordinator.next_run.hour == 6
+        assert coordinator.next_run.day == 30
+
+    @patch("custom_components.wateringhub.coordinator.dt_util")
+    def test_next_run_empty_times(self, mock_dt, coordinator):
+        """Empty times list → next_run is None."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": []}
+        mock_dt.now.return_value = datetime(2026, 3, 29, 20, 0, tzinfo=None)
+        coordinator._recalculate_next_run()
+        assert coordinator.next_run is None
+
+
+class TestScheduleTrigger:
+    """Test _async_time_tick fires at each scheduled time."""
+
+    @pytest.mark.asyncio
+    async def test_fires_at_first_time(self, coordinator):
+        """Program with times ['06:00', '22:00'] fires at 06:00."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        coordinator.async_run_program = AsyncMock()
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            now = datetime(2026, 3, 29, 6, 0, tzinfo=None)
+            mock_dt.now.return_value = now
+            await coordinator._async_time_tick(now)
+        coordinator.async_run_program.assert_called_once_with("prog_a")
+
+    @pytest.mark.asyncio
+    async def test_fires_at_second_time(self, coordinator):
+        """Program with times ['06:00', '22:00'] fires at 22:00."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        coordinator.async_run_program = AsyncMock()
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            now = datetime(2026, 3, 29, 22, 0, tzinfo=None)
+            mock_dt.now.return_value = now
+            await coordinator._async_time_tick(now)
+        coordinator.async_run_program.assert_called_once_with("prog_a")
+
+    @pytest.mark.asyncio
+    async def test_does_not_fire_between_times(self, coordinator):
+        """Program with times ['06:00', '22:00'] does not fire at 12:00."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        coordinator.async_run_program = AsyncMock()
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            now = datetime(2026, 3, 29, 12, 0, tzinfo=None)
+            mock_dt.now.return_value = now
+            await coordinator._async_time_tick(now)
+        coordinator.async_run_program.assert_not_called()
+
 
 class TestStopAll:
     """Test stop_all behavior."""
@@ -258,7 +323,7 @@ class TestCRUDPrograms:
         await coordinator.async_create_program(
             "prog_c",
             "Program C",
-            {"type": "daily", "time": "06:00"},
+            {"times": ["06:00"]},
             [{"zone_id": "zone_1", "valves": [{"valve_id": "valve_1", "duration": 5}]}],
         )
         assert "prog_c" in coordinator.programs
@@ -267,9 +332,7 @@ class TestCRUDPrograms:
     @pytest.mark.asyncio
     async def test_create_program_duplicate(self, coordinator):
         with pytest.raises(ValueError, match="already exists"):
-            await coordinator.async_create_program(
-                "prog_a", "Dup", {"type": "daily", "time": "06:00"}, []
-            )
+            await coordinator.async_create_program("prog_a", "Dup", {"times": ["06:00"]}, [])
 
     @pytest.mark.asyncio
     async def test_update_program(self, coordinator):
@@ -284,7 +347,7 @@ class TestCRUDPrograms:
             await coordinator.async_create_program(
                 "prog_c",
                 "Program C",
-                {"time": "06:00"},
+                {"times": ["06:00"]},
                 [{"zone_id": "zone_2", "valves": [{"valve_id": "valve_1", "duration": 5}]}],
             )
 

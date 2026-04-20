@@ -561,13 +561,13 @@ class WateringHubCoordinator:
             self._notify_listeners()
             _LOGGER.info("Program '%s' skip expired, resuming", active["id"])
 
-        target_time = active["schedule"]["time"]
+        times = active["schedule"].get("times", [])
         current_time = now.strftime("%H:%M")
 
-        if current_time != target_time:
+        if current_time not in times:
             return
 
-        _LOGGER.info("Triggering program '%s'", active["id"])
+        _LOGGER.info("Triggering program '%s' at %s", active["id"], current_time)
         await self.async_run_program(active["id"])
 
     def _get_active_program(self) -> dict | None:
@@ -602,34 +602,43 @@ class WateringHubCoordinator:
     def _recalculate_next_run(self) -> None:
         """Recalculate the next_run datetime based on the active program.
 
-        The program triggers every day at its scheduled time.
-        Valve-level frequency filtering happens at execution time.
+        The program can have multiple trigger times per day. next_run is the
+        earliest future occurrence across all of them. Valve-level frequency
+        filtering happens at execution time.
         """
         active = self._get_active_program()
         if not active:
             self._next_run = None
             return
 
-        hour, minute = map(int, active["schedule"]["time"].split(":"))
+        times = active["schedule"].get("times", [])
+        if not times:
+            self._next_run = None
+            return
+
         now = dt_util.now()
-        candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        candidates = []
+        for t in times:
+            hour, minute = map(int, t.split(":"))
+            candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            if candidate <= now:
+                candidate += timedelta(days=1)
+            candidates.append(candidate)
 
-        if candidate <= now:
-            candidate += timedelta(days=1)
+        next_candidate = min(candidates)
 
-        # If skip is active, advance candidate to skip_until date
+        # If skip is active, advance to skip_until date (keep earliest time of day)
         skip_until_str = active.get("skip_until")
         if skip_until_str:
             skip_date = date.fromisoformat(skip_until_str)
-            skip_candidate = candidate.replace(
-                year=skip_date.year,
-                month=skip_date.month,
-                day=skip_date.day,
-            )
-            if skip_candidate > candidate:
-                candidate = skip_candidate
+            if next_candidate.date() < skip_date:
+                next_candidate = next_candidate.replace(
+                    year=skip_date.year,
+                    month=skip_date.month,
+                    day=skip_date.day,
+                )
 
-        self._next_run = candidate
+        self._next_run = next_candidate
 
     # --- Executor ---
 
