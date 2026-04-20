@@ -220,6 +220,108 @@ class TestScheduleTrigger:
             await coordinator._async_time_tick(now)
         coordinator.async_run_program.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_trigger_time_passed_to_run_program(self, coordinator):
+        """_async_time_tick passes current_time to async_run_program."""
+        coordinator._programs["prog_a"]["schedule"] = {"times": ["06:00", "22:00"]}
+        coordinator.async_run_program = AsyncMock()
+        with patch("custom_components.wateringhub.coordinator.dt_util") as mock_dt:
+            now = datetime(2026, 3, 29, 6, 0, tzinfo=None)
+            mock_dt.now.return_value = now
+            await coordinator._async_time_tick(now)
+        coordinator.async_run_program.assert_called_once_with("prog_a", trigger_time="06:00")
+
+
+class TestPerValveTimes:
+    """Test per-valve times filtering in _build_valves_sequence."""
+
+    def test_valve_without_times_runs_at_all_times(self, coordinator):
+        """A valve without `times` override runs at every trigger_time."""
+        program = {
+            "zones": [
+                {
+                    "zone_id": "zone_1",
+                    "valves": [{"valve_id": "valve_1", "duration": 5}],
+                }
+            ]
+        }
+        now = datetime(2026, 3, 29, 22, 0)
+        seq = coordinator._build_valves_sequence(program, now, trigger_time="06:00")
+        assert len(seq) == 1
+        assert seq[0]["valve_id"] == "valve_1"
+
+    def test_valve_with_times_filtered_out(self, coordinator):
+        """A valve with `times: ['22:00']` is skipped at trigger_time='06:00'."""
+        program = {
+            "zones": [
+                {
+                    "zone_id": "zone_1",
+                    "valves": [
+                        {"valve_id": "valve_1", "duration": 5, "times": ["22:00"]},
+                    ],
+                }
+            ]
+        }
+        now = datetime(2026, 3, 29, 6, 0)
+        seq = coordinator._build_valves_sequence(program, now, trigger_time="06:00")
+        assert seq == []
+
+    def test_valve_with_times_included(self, coordinator):
+        """A valve with `times: ['22:00']` runs at trigger_time='22:00'."""
+        program = {
+            "zones": [
+                {
+                    "zone_id": "zone_1",
+                    "valves": [
+                        {"valve_id": "valve_1", "duration": 5, "times": ["22:00"]},
+                    ],
+                }
+            ]
+        }
+        now = datetime(2026, 3, 29, 22, 0)
+        seq = coordinator._build_valves_sequence(program, now, trigger_time="22:00")
+        assert len(seq) == 1
+
+    def test_mixed_valves_per_time(self, coordinator):
+        """Program at 06:00: only valves with no times OR times containing '06:00' run."""
+        program = {
+            "zones": [
+                {
+                    "zone_id": "zone_1",
+                    "valves": [
+                        {"valve_id": "valve_1", "duration": 5},  # always
+                        {
+                            "valve_id": "valve_2",
+                            "duration": 5,
+                            "times": ["06:00", "22:00"],
+                        },
+                    ],
+                }
+            ]
+        }
+        now = datetime(2026, 3, 29, 6, 0)
+        seq = coordinator._build_valves_sequence(program, now, trigger_time="06:00")
+        assert len(seq) == 2
+
+        seq_22 = coordinator._build_valves_sequence(program, now, trigger_time="22:00")
+        assert len(seq_22) == 2
+
+    def test_trigger_time_none_bypasses_valve_times(self, coordinator):
+        """If trigger_time is None (manual call), valve times filter is bypassed."""
+        program = {
+            "zones": [
+                {
+                    "zone_id": "zone_1",
+                    "valves": [
+                        {"valve_id": "valve_1", "duration": 5, "times": ["22:00"]},
+                    ],
+                }
+            ]
+        }
+        now = datetime(2026, 3, 29, 12, 0)
+        seq = coordinator._build_valves_sequence(program, now, trigger_time=None)
+        assert len(seq) == 1  # not filtered out when trigger_time is None
+
 
 class TestStopAll:
     """Test stop_all behavior."""

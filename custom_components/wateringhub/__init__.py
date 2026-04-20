@@ -75,6 +75,7 @@ PROGRAM_VALVE_SCHEMA = vol.Schema(
         vol.Required("valve_id"): cv.string,
         vol.Required("duration"): vol.All(vol.Coerce(int), vol.Range(min=1)),
         vol.Optional("frequency"): VALVE_FREQUENCY_SCHEMA,
+        vol.Optional("times"): vol.All(cv.ensure_list, [cv.string]),
     }
 )
 

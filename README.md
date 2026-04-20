@@ -1,6 +1,6 @@
 # WateringHub
 
-**Version :** 0.0.27
+**Version :** 0.0.28
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/odexvy/WateringHub)](https://github.com/odexvy/WateringHub/releases)
@@ -156,9 +156,10 @@ data:
     - zone_id: jardin
       valves:
         - valve_id: valve_1
-          duration: 15
+          duration: 15           # runs at every schedule.times
         - valve_id: valve_2
           duration: 20
+          times: ["22:00"]       # only runs at 22:00, not at 06:00
           frequency:
             type: every_n_days
             n: 2

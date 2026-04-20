@@ -127,7 +127,7 @@ create_program:
       required: true
     zones:
       name: Zones
-      description: "List of zone references with valve durations. Each valve supports an optional frequency override: { type: every_n_days, n: 2, start_date: '2026-01-01' } or { type: weekdays, days: [mon, wed, fri] }."
+      description: "List of zone references with valve durations. Each valve supports: an optional frequency override ({ type: every_n_days, n: 2, start_date: '2026-01-01' } or { type: weekdays, days: [mon, wed, fri] }), and an optional times list to restrict which schedule.times the valve runs at (e.g. times: ['22:00'] to only run in the evening when schedule.times is ['06:00', '22:00'])."
       required: true
     dry_run:
       name: Dry Run
@@ -155,7 +155,7 @@ update_program:
       description: "New schedule object: { times: ['22:00'] } or { times: ['06:00', '22:00'] }."
     zones:
       name: Zones
-      description: "New zone references with valve durations. Each valve supports an optional frequency override."
+      description: "New zone references with valve durations. Each valve supports an optional frequency override and an optional times list."
     dry_run:
       name: Dry Run
       description: "Simulate execution without opening physical valves."

@@ -568,7 +568,7 @@ class WateringHubCoordinator:
             return
 
         _LOGGER.info("Triggering program '%s' at %s", active["id"], current_time)
-        await self.async_run_program(active["id"])
+        await self.async_run_program(active["id"], trigger_time=current_time)
 
     def _get_active_program(self) -> dict | None:
         """Return the single enabled program, or None."""
@@ -642,8 +642,15 @@ class WateringHubCoordinator:
 
     # --- Executor ---
 
-    def _build_valves_sequence(self, program: dict, now) -> list[dict]:
-        """Build the ordered list of eligible valves for today's execution."""
+    def _build_valves_sequence(
+        self, program: dict, now, trigger_time: str | None = None
+    ) -> list[dict]:
+        """Build the ordered list of eligible valves for this execution.
+
+        Filters by per-valve `frequency` (daily/every_n_days/weekdays) and by
+        per-valve `times` (only include valves whose times contains trigger_time,
+        or that have no times override).
+        """
         sequence = []
         for zone_ref in program.get("zones", []):
             zone = self._zones.get(zone_ref["zone_id"])
@@ -654,6 +661,15 @@ class WateringHubCoordinator:
                     _LOGGER.debug(
                         "Valve '%s' skipped (frequency not matched today)",
                         valve_ref["valve_id"],
+                    )
+                    continue
+                valve_times = valve_ref.get("times")
+                if trigger_time and valve_times and trigger_time not in valve_times:
+                    _LOGGER.debug(
+                        "Valve '%s' skipped (trigger time %s not in valve times %s)",
+                        valve_ref["valve_id"],
+                        trigger_time,
+                        valve_times,
                     )
                     continue
                 valve = self._valves.get(valve_ref["valve_id"])
@@ -678,8 +694,14 @@ class WateringHubCoordinator:
             groups.setdefault(entry["water_supply_id"], []).append(entry)
         return groups
 
-    async def async_run_program(self, program_id: str) -> None:
-        """Execute a program: run supply pipelines in parallel."""
+    async def async_run_program(self, program_id: str, trigger_time: str | None = None) -> None:
+        """Execute a program: run supply pipelines in parallel.
+
+        If trigger_time is provided (e.g. "06:00"), per-valve `times` filtering
+        is applied: valves with a `times` list that doesn't include trigger_time
+        are skipped. If trigger_time is None (manual invocation), per-valve
+        times filter is bypassed — all valves run.
+        """
         async with self._run_lock:
             if self._running_program:
                 _LOGGER.warning("Program execution already in progress, skipping")
@@ -695,7 +717,7 @@ class WateringHubCoordinator:
             self._error_message = None
 
             now = dt_util.now()
-            sequence = self._build_valves_sequence(program, now)
+            sequence = self._build_valves_sequence(program, now, trigger_time)
 
             if not sequence:
                 _LOGGER.info(

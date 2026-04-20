@@ -1,7 +1,7 @@
 # WateringHub — Statut du projet
 
 **Date :** 2026-04-13
-**Version :** 0.0.27
+**Version :** 0.0.28
 **Branche :** master
 
 ---
@@ -188,6 +188,7 @@ WateringHub/
 15. **`valves_sequence` sur le sensor status** — liste ordonnée avec `status: done/running/pending` et `water_supply_id`
 16. **`dry_run` par programme** — flag boolean persisté, simule l'exécution complète sans commander les vannes physiques
 17. **Schedule = liste d'heures** — le programme définit une ou plusieurs heures de déclenchement (`times: [...]`), fréquence gérée par vanne
+24. **Horaires par vanne** — chaque vanne peut avoir un `times` optionnel qui restreint les horaires du programme auxquels elle tourne. Exemple : programme à 06:00 + 22:00, une vanne avec `times: ['22:00']` ne tourne qu'à 22:00
 18. **Fréquence par vanne** — `frequency` optionnel, types `every_n_days` et `weekdays`. Sans frequency = quotidien
 19. **`set_valves` centralise les assignations** — chaque vanne porte `zone_id` + `water_supply_id` (optionnels, null = non assigné)
 20. **Delete zone/water_supply = clear refs** — suppression nettoie les références sur les vannes au lieu de refuser
